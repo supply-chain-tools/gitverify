@@ -6,17 +6,18 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/plumbing"
-	"github.com/supply-chain-tools/go-sandbox/githash"
-	"github.com/supply-chain-tools/go-sandbox/gitkit"
-	"github.com/supply-chain-tools/go-sandbox/gitverify"
-	"github.com/supply-chain-tools/go-sandbox/hashset"
 	"log/slog"
 	"os"
 	"runtime/debug"
 	"sort"
 	"strings"
+
+	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/supply-chain-tools/gitverify/gitverify"
+	"github.com/supply-chain-tools/go-sandbox/githash"
+	"github.com/supply-chain-tools/go-sandbox/gitkit"
+	"github.com/supply-chain-tools/go-sandbox/hashset"
 )
 
 const usage = `Usage:

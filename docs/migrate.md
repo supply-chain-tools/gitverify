@@ -40,9 +40,9 @@ This is the recommended way to start using `gitverify` with an existing reposito
   },
   "repositories": [
     {
-      "uri": "git+https://github.com/supply-chain-tools/go-sandbox.git",
+      "uri": "git+https://github.com/supply-chain-tools/gitverify.git",
       "after": [{
-          "sha1": "1f46f2053221c040ce5bcba0239bc09214a37658"
+          "sha1": "88fc58debf5fc1e36c2e6ecf94447a084eb7aeee"
         }]
     }
   ]

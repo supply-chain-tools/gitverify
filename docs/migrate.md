@@ -3,7 +3,7 @@
 This is the recommended way to start using `gitverify` with an existing repository.
 
  - For additional config settings, see [config.md](config.md).
- - For FAQ, see [README.md](README.md)
+ - For FAQ, see [README.md](../README.md)
 
 ### Basic, permissive config
 - Fairly permissive config that checks commit signatures, but not tag signatures.

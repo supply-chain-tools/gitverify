@@ -45,9 +45,9 @@
   },
   "repositories": [
     {
-      "uri": " git+https://github.com/supply-chain-tools/go-sandbox.git",
+      "uri": " git+https://github.com/supply-chain-tools/gitverify.git",
       "after": [{
-          "sha1": "1f46f2053221c040ce5bcba0239bc09214a37658",
+          "sha1": "88fc58debf5fc1e36c2e6ecf94447a084eb7aeee",
           "branch": "main"
         }],
       "exemptTags": [{"ref":"refs/tags/0.0.1","hash":{"sha1":"1f46f2053221c040ce5bcba0239bc09214a37658"}}]
@@ -118,7 +118,7 @@ When `requireMergeCommits` is set, only merge commits are allowed into the prote
 | Config                  | Value                | Required                                   | Description                                                                                                                                         |
 |-------------------------|----------------------|--------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------|
 | `repositories`          | list of `repository` | yes                                        | Used to verify forge commits and interpret `identities.forgeUsername` and `identities.forgeUserId`                                                  |
-| `repository.uri`        | repo URI             | yes                                        | E.g. `git+https://github.com/supply-chain-toosl/go-sandbox.git`                                                                                     |
+| `repository.uri`        | repo URI             | yes                                        | E.g. `git+https://github.com/supply-chain-tools/gitverify.git`                                                                                      |
 | `repository.after`      | list of `after`      | yes                                        |                                                                                                                                                     |
 | `after.sha1`            | git commit SHA-1     | yes, unless `after.sha512` is set          | The commit pointed to by `after.sha1` and it's ancestors will be ignored. If both `sha1` and `sha512` are set they must point to the same commit.   |
 | `after.sha512`          | git commit SHA-512   | yes, unless `after.sha1` is set            | The commit pointed to by `after.sha512` and it's ancestors will be ignored. If both `sha1` and `sha512` are set they must point to the same commit. |

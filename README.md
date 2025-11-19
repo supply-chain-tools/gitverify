@@ -10,7 +10,7 @@ curl https://raw.githubusercontent.com/supply-chain-tools/root-of-trust/refs/hea
 
 Verify
 ```sh
-gitverify --config-file gitverify.json --repository-uri git+https://github.com/supply-chain-tools/go-sandbox.git
+gitverify --config-file gitverify.json --repository-uri git+https://github.com/supply-chain-tools/gitverify.git
 validating...
 OK
 ```
@@ -29,7 +29,7 @@ This will use the first upstream URL in the git config to infer the forge, organ
 The default when inferring the config is also to store local state (described in [threat-model.md](docs/threat-model.md)). It will be
 placed in
 ```sh
-~/.config/gitverify/github.com/supply-chain-tools/go-sandbox/local.json
+~/.config/gitverify/github.com/supply-chain-tools/gitverify/local.json
 # i.e. ~/config/gitverify/<forge>/<organization>/<repository>/local.json
 ```
 

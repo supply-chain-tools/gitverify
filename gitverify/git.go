@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"github.com/go-git/go-git/v5"
 	"log"
 	"os/exec"
 	"regexp"
 	"strings"
+
+	"github.com/go-git/go-git/v5"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
@@ -31,6 +32,7 @@ type CommitData struct {
 	Ignore                          bool
 	VerifiedToNotHaveContentChanges bool
 	SignatureVerified               bool
+	MergeTag                        *object.Tag
 }
 
 func InferForgeOrgAndRepo(repo *git.Repository) (forge string, org string, repoName string) {

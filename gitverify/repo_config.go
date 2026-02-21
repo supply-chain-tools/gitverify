@@ -4,11 +4,12 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"regexp"
+	"strings"
+
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/supply-chain-tools/go-sandbox/hashset"
 	"golang.org/x/crypto/ssh"
-	"regexp"
-	"strings"
 )
 
 type RepoConfig struct {
@@ -32,6 +33,7 @@ type RepoConfig struct {
 	allowGPGSignatures                 bool
 	requireSignedTags                  bool
 	requireMergeCommits                bool
+	requireMergeTags                   bool
 	requireUpToDate                    bool
 	protectedBranches                  hashset.Set[string]
 	exemptedTags                       map[string]string
@@ -296,6 +298,7 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 		allowGPGSignatures:                 repo.Rules.AllowGPGSignatures,
 		requireSignedTags:                  repo.Rules.RequireSignedTags,
 		requireMergeCommits:                repo.Rules.RequireMergeCommits,
+		requireMergeTags:                   repo.Rules.RequireMergeTags,
 		requireUpToDate:                    repo.Rules.RequireUpToDate,
 		exemptedTags:                       exemptedTagMap,
 		exemptedTagsSHA512:                 exemptedTagSHA512Map,

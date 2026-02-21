@@ -4,14 +4,15 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	"regexp"
+	"strings"
+
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/supply-chain-tools/go-sandbox/githash"
 	"github.com/supply-chain-tools/go-sandbox/gitkit"
 	"github.com/supply-chain-tools/go-sandbox/hashset"
-	"regexp"
-	"strings"
 )
 
 type ValidateOptions struct {
@@ -138,9 +139,76 @@ func validateCommit(commit *object.Commit, commitMetadata map[plumbing.Hash]*Com
 		return fmt.Errorf("unknown signature type for commit: %s", commit.Hash.String())
 	}
 
+	if commit.MergeTag != "" {
+		mergeTag, err := extractMergeTag(commit)
+		if err != nil {
+			return err
+		}
+
+		signatureType, err := inferSignatureType(mergeTag.PGPSignature)
+		if err != nil {
+			return err
+		}
+
+		id, found := repoConfig.maintainerEmails[mergeTag.Tagger.Email]
+		if !found {
+			return fmt.Errorf("no maintainer with email '%s' for mergetag in commit %s", mergeTag.Tagger.Email, commit.Hash.String())
+		}
+
+		switch signatureType {
+		case SignatureTypeSSH:
+			content, err := tagContent(mergeTag)
+			if err != nil {
+				return err
+			}
+			err = validateSSH(content, mergeTag.PGPSignature, id, repoConfig)
+			if err != nil {
+				return fmt.Errorf("failed to validate mergetag in commit %s: %w", commit.Hash.String(), err)
+			}
+		case SignatureTypeGPG:
+			err := validateIdentityGPGTag(mergeTag, id, repoConfig)
+			if err != nil {
+				return err
+			}
+		default:
+			return fmt.Errorf("missing signature for mergetag in commit %s", commit.Hash.String())
+		}
+
+		if len(commit.ParentHashes) != 2 {
+			return fmt.Errorf("expected two parents when using mergetag in commit %s", commit.Hash.String())
+		}
+
+		if commit.ParentHashes[1] != mergeTag.Target {
+			return fmt.Errorf("commit parent does not match mergetag in commit %s", commit.Hash.String())
+		}
+
+		metadata.MergeTag = mergeTag
+	}
+
 	metadata.SignatureVerified = true
 
 	return nil
+}
+
+func extractMergeTag(commit *object.Commit) (*object.Tag, error) {
+	if commit.MergeTag == "" {
+		return nil, fmt.Errorf("commit does not contain mergetag: %s", commit.Hash.String())
+	}
+
+	memoryObject := plumbing.MemoryObject{}
+	memoryObject.SetType(plumbing.TagObject)
+	_, err := memoryObject.Write([]byte(commit.MergeTag))
+	if err != nil {
+		return nil, err
+	}
+
+	mergeTag := object.Tag{}
+	err = mergeTag.Decode(&memoryObject)
+	if err != nil {
+		return nil, err
+	}
+
+	return &mergeTag, nil
 }
 
 func validateOpts(opts *ValidateOptions, repo *git.Repository, state *gitkit.RepoState, commitMetadata map[plumbing.Hash]*CommitData, config *RepoConfig, gitHashSHA1 githash.GitHash, gitHashSHA512 githash.GitHash) error {
@@ -449,7 +517,27 @@ func validateProtectedBranch(reference *plumbing.Reference, branchName string, s
 			if len(current.ParentHashes) != 2 {
 				return fmt.Errorf("requireMergeCommits is set, but commit %s on protected branch has %d parents", current.Hash.String(), len(current.ParentHashes))
 			}
+		}
 
+		if config.requireMergeTags {
+			metadata := commitMetadata[current.Hash]
+
+			if metadata.MergeTag == nil {
+				return fmt.Errorf("requireMergeTags is set, but no mergetag in commit %s", current.Hash.String())
+			}
+
+			targetCommit, found := state.CommitMap[metadata.MergeTag.Target]
+			if !found {
+				return fmt.Errorf("mergetag target commit %s not found", metadata.MergeTag.Target.String())
+			}
+
+			if current.TreeHash != targetCommit.TreeHash {
+				return fmt.Errorf("requireMergeTags is set, but commit tree and mergetag tree does not match for commit %s", current.Hash.String())
+			}
+
+			if metadata.MergeTag.Tagger.Email == current.Committer.Email {
+				return fmt.Errorf("committer and tagger cannot be the same when requireMergeTags is set for commit %s", current.Hash.String())
+			}
 		}
 
 		if len(current.ParentHashes) == 2 {
@@ -490,7 +578,7 @@ func validateProtectedBranch(reference *plumbing.Reference, branchName string, s
 		}
 
 		if len(current.ParentHashes) == 0 {
-			return fmt.Errorf("protected branch %s is not a decendant of after", reference.Name().String())
+			return fmt.Errorf("protected branch %s is not a descendant of after", reference.Name().String())
 		}
 
 		current, found = state.CommitMap[current.ParentHashes[0]]
@@ -752,6 +840,17 @@ func buildContent(commit *object.Commit) string {
 	// TODO verify for UTC
 	sb.WriteString(fmt.Sprintf("author %s <%s> %d %s\n", commit.Author.Name, commit.Author.Email, commit.Author.When.Unix(), commit.Author.When.Format("-0700")))
 	sb.WriteString(fmt.Sprintf("committer %s <%s> %d %s\n", commit.Committer.Name, commit.Committer.Email, commit.Committer.When.Unix(), commit.Committer.When.Format("-0700")))
+
+	if commit.MergeTag != "" {
+		parts := strings.Split(commit.MergeTag, "\n")
+
+		sb.WriteString("mergetag")
+		for i := 0; i < len(parts)-1; i++ {
+			sb.WriteString(" ")
+			sb.WriteString(parts[i])
+			sb.WriteString("\n")
+		}
+	}
 	sb.WriteString("\n")
 	sb.WriteString(commit.Message)
 	return sb.String()

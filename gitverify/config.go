@@ -4,13 +4,14 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/supply-chain-tools/go-sandbox/hashset"
 	"net/url"
 	"os"
 	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/supply-chain-tools/go-sandbox/hashset"
 )
 
 type Config struct {
@@ -52,6 +53,7 @@ type Rules struct {
 	RequireSignedTags   *bool `json:"RequireSignedTags"`
 	RequireMergeCommits *bool `json:"requireMergeCommits"`
 	RequireUpToDate     *bool `json:"requireUpToDate"`
+	RequireMergeTags    *bool `json:"requireMergeTags"`
 }
 
 type Repository struct {
@@ -110,6 +112,7 @@ type ParsedRules struct {
 	RequireSignedTags   bool
 	RequireMergeCommits bool
 	RequireUpToDate     bool
+	RequireMergeTags    bool
 }
 
 func GetConfigPath(forge string, org string) (string, error) {
@@ -222,6 +225,7 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 			RequireSignedTags:      true,
 			RequireMergeCommits:    true,
 			RequireUpToDate:        true,
+			RequireMergeTags:       false,
 		}
 
 		if rules != nil {
@@ -256,6 +260,10 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 			if rules.RequireUpToDate != nil {
 				parsedRules.RequireUpToDate = *rules.RequireUpToDate
 			}
+
+			if rules.RequireMergeTags != nil {
+				parsedRules.RequireMergeTags = *rules.RequireMergeTags
+			}
 		}
 
 		forgeRules, err := combineForgeRules(config.ForgeRules, repo.ForgeRules)
@@ -266,6 +274,14 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 		protectedBranches, err := combineProtectedBranches(config.ProtectedBranches, repo.ProtectedBranches)
 		if err != nil {
 			return nil, err
+		}
+
+		if parsedRules.RequireMergeTags == true && parsedRules.RequireMergeCommits == false {
+			return nil, fmt.Errorf("requireMergeTags can only be used with requireMergeCommits")
+		}
+
+		if parsedRules.RequireMergeTags == true && parsedRules.RequireUpToDate == false {
+			return nil, fmt.Errorf("requireMergeTags can only be used with requireUpToDate")
 		}
 
 		parsedRepos = append(parsedRepos, ParsedRepository{

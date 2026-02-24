@@ -91,7 +91,7 @@ func validateCommit(commit *object.Commit, commitMetadata map[plumbing.Hash]*Com
 				return fmt.Errorf("forge is not allowed to make commits: %s", commit.Hash.String())
 			}
 
-			_, found := repoConfig.maintainerOrContributorEmails[commit.Author.Email]
+			_, found := repoConfig.countersignerMaintainerContributorEmails[commit.Author.Email]
 			if !found {
 				_, found := repoConfig.maintainerOrContributorForgeEmails[commit.Author.Email]
 				if !found {
@@ -116,7 +116,7 @@ func validateCommit(commit *object.Commit, commitMetadata map[plumbing.Hash]*Com
 		}
 	}
 
-	id, found := repoConfig.maintainerOrContributorEmails[email]
+	id, found := repoConfig.countersignerMaintainerContributorEmails[email]
 	if !found {
 		return fmt.Errorf("no maintainer with email '%s' for commit %s", email, commit.Hash)
 	}
@@ -522,6 +522,13 @@ func validateProtectedBranch(reference *plumbing.Reference, branchName string, s
 		if config.requireCountersigning {
 			metadata := commitMetadata[current.Hash]
 
+			if len(config.countersignerEmails) > 0 {
+				_, found := config.countersignerEmails[current.Committer.Email]
+				if !found {
+					return fmt.Errorf("commit %s is made by %s which is not a countersigner", current.Hash.String(), current.Committer.Email)
+				}
+			}
+
 			if metadata.MergeTag == nil {
 				return fmt.Errorf("requireCountersigning is set, but no mergetag in commit %s", current.Hash.String())
 			}
@@ -538,10 +545,24 @@ func validateProtectedBranch(reference *plumbing.Reference, branchName string, s
 			if metadata.MergeTag.Tagger.Email == current.Committer.Email {
 				return fmt.Errorf("committer and tagger cannot be the same when requireCountersigning is set for commit %s", current.Hash.String())
 			}
+
+			taggerIdentity, found := config.countersignerMaintainerEmails[metadata.MergeTag.Tagger.Email]
+			if !found {
+				return fmt.Errorf("tagger not found for commit %s", current.Hash.String())
+			}
+
+			committerIdentity, found := config.countersignerMaintainerEmails[current.Committer.Email]
+			if !found {
+				return fmt.Errorf("commiter not found for commit %s", current.Hash.String())
+			}
+
+			if taggerIdentity.email == committerIdentity.email {
+				return fmt.Errorf("committer and tagger cannot be the same when requireCountersigning is set for commit %s", current.Hash.String())
+			}
 		}
 
 		if len(current.ParentHashes) == 2 {
-			_, found := config.maintainerEmails[current.Committer.Email]
+			_, found := config.countersignerMaintainerEmails[current.Committer.Email]
 			if !found {
 				if config.forge != nil && current.Committer.Email == config.forge.email {
 					_, found = config.maintainerEmails[current.Author.Email]
@@ -551,7 +572,7 @@ func validateProtectedBranch(reference *plumbing.Reference, branchName string, s
 				}
 
 				if !found {
-					return fmt.Errorf("merge commit %s made by %s which is not a maintainer", current.Hash.String(), current.Committer.Email)
+					return fmt.Errorf("merge commit %s is made by %s which is not a countersigner nor a maintainer", current.Hash.String(), current.Committer.Email)
 				}
 			}
 

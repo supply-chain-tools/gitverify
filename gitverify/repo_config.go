@@ -13,31 +13,33 @@ import (
 )
 
 type RepoConfig struct {
-	afterSHA1                          hashset.Set[plumbing.Hash]
-	afterSHA512                        hashset.Set[[64]byte]
-	sha1ToBranch                       map[plumbing.Hash]string
-	branchToSHA1                       map[string]plumbing.Hash
-	sha512ToBranch                     map[[64]byte]string
-	afterSHA1ToSHA512                  map[plumbing.Hash][64]byte
-	maintainerEmails                   map[string]identity
-	contributorEmails                  map[string]identity
-	maintainerOrContributorEmails      map[string]identity
-	maintainerForgeEmails              map[string]identity
-	contributorForgeEmails             map[string]identity
-	maintainerOrContributorForgeEmails map[string]identity
-	forge                              *forge
-	allowSSHSignatures                 bool
-	requireSSHUserPresent              bool
-	requireSSHUserVerified             bool
-	allowSSHSHA256                     bool
-	allowGPGSignatures                 bool
-	requireSignedTags                  bool
-	requireMergeCommits                bool
-	requireCountersigning              bool
-	requireUpToDate                    bool
-	protectedBranches                  hashset.Set[string]
-	exemptedTags                       map[string]string
-	exemptedTagsSHA512                 map[string]string
+	afterSHA1                                hashset.Set[plumbing.Hash]
+	afterSHA512                              hashset.Set[[64]byte]
+	sha1ToBranch                             map[plumbing.Hash]string
+	branchToSHA1                             map[string]plumbing.Hash
+	sha512ToBranch                           map[[64]byte]string
+	afterSHA1ToSHA512                        map[plumbing.Hash][64]byte
+	countersignerEmails                      map[string]identity
+	maintainerEmails                         map[string]identity
+	contributorEmails                        map[string]identity
+	countersignerMaintainerEmails            map[string]identity
+	countersignerMaintainerContributorEmails map[string]identity
+	maintainerForgeEmails                    map[string]identity
+	contributorForgeEmails                   map[string]identity
+	maintainerOrContributorForgeEmails       map[string]identity
+	forge                                    *forge
+	allowSSHSignatures                       bool
+	requireSSHUserPresent                    bool
+	requireSSHUserVerified                   bool
+	allowSSHSHA256                           bool
+	allowGPGSignatures                       bool
+	requireSignedTags                        bool
+	requireMergeCommits                      bool
+	requireCountersigning                    bool
+	requireUpToDate                          bool
+	protectedBranches                        hashset.Set[string]
+	exemptedTags                             map[string]string
+	exemptedTagsSHA512                       map[string]string
 }
 
 type identity struct {
@@ -70,6 +72,7 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 	if len(repo.Maintainers) == 0 {
 		return nil, fmt.Errorf("no maintainers specified: %s", repoUri)
 	}
+	countersignerSet := hashset.New[string](repo.Countersigners...)
 	maintainerSet := hashset.New[string](repo.Maintainers...)
 	contributorSet := hashset.New[string](repo.Contributors...)
 
@@ -80,9 +83,11 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 	}
 
 	allEmails := hashset.New[string]()
+	countersignerEmails := make(map[string]identity)
 	maintainerEmails := make(map[string]identity)
 	contributorEmails := make(map[string]identity)
-	maintainerOrContributor := make(map[string]identity)
+	countersignerMaintainerEmails := make(map[string]identity)
+	countersignerMaintainerContributorEmails := make(map[string]identity)
 
 	allForgeEmails := hashset.New[string]()
 	maintainerForgeEmails := make(map[string]identity)
@@ -130,27 +135,30 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 		}
 		allEmails.Add(i.Email)
 
-		if maintainerSet.Contains(i.Email) || contributorSet.Contains(i.Email) {
-			maintainerOrContributor[i.Email] = identityEntry
-
-			if forgeEmail != "" {
-				maintainerOrContributorForgeEmails[forgeEmail] = identityEntry
-			}
+		if countersignerSet.Contains(i.Email) {
+			countersignerEmails[i.Email] = identityEntry
+			countersignerMaintainerEmails[i.Email] = identityEntry
+			countersignerMaintainerContributorEmails[i.Email] = identityEntry
 		}
 
 		if maintainerSet.Contains(i.Email) {
 			maintainerEmails[i.Email] = identityEntry
+			countersignerMaintainerEmails[i.Email] = identityEntry
+			countersignerMaintainerContributorEmails[i.Email] = identityEntry
 
 			if forgeEmail != "" {
 				maintainerForgeEmails[forgeEmail] = identityEntry
+				maintainerOrContributorForgeEmails[forgeEmail] = identityEntry
 			}
 		}
 
 		if contributorSet.Contains(i.Email) {
 			contributorEmails[i.Email] = identityEntry
+			countersignerMaintainerContributorEmails[i.Email] = identityEntry
 
 			if forgeEmail != "" {
 				contributorForgeEmails[forgeEmail] = identityEntry
+				maintainerOrContributorForgeEmails[forgeEmail] = identityEntry
 			}
 		}
 
@@ -160,14 +168,19 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 			}
 
 			allEmails.Add(additionalEmail)
+			if countersignerSet.Contains(i.Email) {
+				countersignerEmails[additionalEmail] = identityEntry
+				countersignerMaintainerContributorEmails[i.Email] = identityEntry
+			}
+
 			if maintainerSet.Contains(i.Email) {
 				maintainerEmails[additionalEmail] = identityEntry
-				maintainerOrContributor[i.Email] = identityEntry
+				countersignerMaintainerContributorEmails[i.Email] = identityEntry
 			}
 
 			if contributorSet.Contains(additionalEmail) {
 				contributorEmails[i.Email] = identityEntry
-				maintainerOrContributor[i.Email] = identityEntry
+				countersignerMaintainerContributorEmails[i.Email] = identityEntry
 			}
 		}
 	}
@@ -278,30 +291,32 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 	}
 
 	return &RepoConfig{
-		afterSHA1:                          afterSHA1,
-		afterSHA512:                        afterSHA512,
-		sha1ToBranch:                       sha1ToBranch,
-		branchToSHA1:                       branchToSHA1,
-		sha512ToBranch:                     sha512ToBranch,
-		afterSHA1ToSHA512:                  afterSHA1ToSHA512,
-		maintainerEmails:                   maintainerEmails,
-		contributorEmails:                  contributorEmails,
-		maintainerOrContributorEmails:      maintainerOrContributor,
-		maintainerForgeEmails:              maintainerForgeEmails,
-		contributorForgeEmails:             contributorForgeEmails,
-		maintainerOrContributorForgeEmails: maintainerOrContributorForgeEmails,
-		forge:                              f,
-		allowSSHSignatures:                 repo.Rules.AllowSSHSignatures,
-		requireSSHUserPresent:              repo.Rules.RequireSSHUserPresent,
-		requireSSHUserVerified:             repo.Rules.RequireSSHUserVerified,
-		allowSSHSHA256:                     repo.Rules.AllowSSHSHA256,
-		allowGPGSignatures:                 repo.Rules.AllowGPGSignatures,
-		requireSignedTags:                  repo.Rules.RequireSignedTags,
-		requireMergeCommits:                repo.Rules.RequireMergeCommits,
-		requireCountersigning:              repo.Rules.RequireCountersigning,
-		requireUpToDate:                    repo.Rules.RequireUpToDate,
-		exemptedTags:                       exemptedTagMap,
-		exemptedTagsSHA512:                 exemptedTagSHA512Map,
-		protectedBranches:                  protectedBranches,
+		afterSHA1:                                afterSHA1,
+		afterSHA512:                              afterSHA512,
+		sha1ToBranch:                             sha1ToBranch,
+		branchToSHA1:                             branchToSHA1,
+		sha512ToBranch:                           sha512ToBranch,
+		afterSHA1ToSHA512:                        afterSHA1ToSHA512,
+		countersignerEmails:                      countersignerEmails,
+		maintainerEmails:                         maintainerEmails,
+		contributorEmails:                        contributorEmails,
+		countersignerMaintainerEmails:            countersignerMaintainerEmails,
+		countersignerMaintainerContributorEmails: countersignerMaintainerContributorEmails,
+		maintainerForgeEmails:                    maintainerForgeEmails,
+		contributorForgeEmails:                   contributorForgeEmails,
+		maintainerOrContributorForgeEmails:       maintainerOrContributorForgeEmails,
+		forge:                                    f,
+		allowSSHSignatures:                       repo.Rules.AllowSSHSignatures,
+		requireSSHUserPresent:                    repo.Rules.RequireSSHUserPresent,
+		requireSSHUserVerified:                   repo.Rules.RequireSSHUserVerified,
+		allowSSHSHA256:                           repo.Rules.AllowSSHSHA256,
+		allowGPGSignatures:                       repo.Rules.AllowGPGSignatures,
+		requireSignedTags:                        repo.Rules.RequireSignedTags,
+		requireMergeCommits:                      repo.Rules.RequireMergeCommits,
+		requireCountersigning:                    repo.Rules.RequireCountersigning,
+		requireUpToDate:                          repo.Rules.RequireUpToDate,
+		exemptedTags:                             exemptedTagMap,
+		exemptedTagsSHA512:                       exemptedTagSHA512Map,
+		protectedBranches:                        protectedBranches,
 	}, nil
 }

@@ -33,7 +33,7 @@ type RepoConfig struct {
 	allowGPGSignatures                 bool
 	requireSignedTags                  bool
 	requireMergeCommits                bool
-	requireMergeTags                   bool
+	requireCountersigning              bool
 	requireUpToDate                    bool
 	protectedBranches                  hashset.Set[string]
 	exemptedTags                       map[string]string
@@ -298,7 +298,7 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 		allowGPGSignatures:                 repo.Rules.AllowGPGSignatures,
 		requireSignedTags:                  repo.Rules.RequireSignedTags,
 		requireMergeCommits:                repo.Rules.RequireMergeCommits,
-		requireMergeTags:                   repo.Rules.RequireMergeTags,
+		requireCountersigning:              repo.Rules.RequireCountersigning,
 		requireUpToDate:                    repo.Rules.RequireUpToDate,
 		exemptedTags:                       exemptedTagMap,
 		exemptedTagsSHA512:                 exemptedTagSHA512Map,

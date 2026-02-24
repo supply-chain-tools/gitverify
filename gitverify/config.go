@@ -50,10 +50,10 @@ type Rules struct {
 
 	AllowGPGSignatures *bool `json:"allowGpgSignatures"`
 
-	RequireSignedTags   *bool `json:"RequireSignedTags"`
-	RequireMergeCommits *bool `json:"requireMergeCommits"`
-	RequireUpToDate     *bool `json:"requireUpToDate"`
-	RequireMergeTags    *bool `json:"requireMergeTags"`
+	RequireSignedTags     *bool `json:"RequireSignedTags"`
+	RequireMergeCommits   *bool `json:"requireMergeCommits"`
+	RequireUpToDate       *bool `json:"requireUpToDate"`
+	RequireCountersigning *bool `json:"requireCountersigning"`
 }
 
 type Repository struct {
@@ -109,10 +109,10 @@ type ParsedRules struct {
 
 	AllowGPGSignatures bool
 
-	RequireSignedTags   bool
-	RequireMergeCommits bool
-	RequireUpToDate     bool
-	RequireMergeTags    bool
+	RequireSignedTags     bool
+	RequireMergeCommits   bool
+	RequireUpToDate       bool
+	RequireCountersigning bool
 }
 
 func GetConfigPath(forge string, org string) (string, error) {
@@ -225,7 +225,7 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 			RequireSignedTags:      true,
 			RequireMergeCommits:    true,
 			RequireUpToDate:        true,
-			RequireMergeTags:       false,
+			RequireCountersigning:  false,
 		}
 
 		if rules != nil {
@@ -261,8 +261,8 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 				parsedRules.RequireUpToDate = *rules.RequireUpToDate
 			}
 
-			if rules.RequireMergeTags != nil {
-				parsedRules.RequireMergeTags = *rules.RequireMergeTags
+			if rules.RequireCountersigning != nil {
+				parsedRules.RequireCountersigning = *rules.RequireCountersigning
 			}
 		}
 
@@ -276,12 +276,12 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 			return nil, err
 		}
 
-		if parsedRules.RequireMergeTags == true && parsedRules.RequireMergeCommits == false {
-			return nil, fmt.Errorf("requireMergeTags can only be used with requireMergeCommits")
+		if parsedRules.RequireCountersigning == true && parsedRules.RequireMergeCommits == false {
+			return nil, fmt.Errorf("requireCountersigning can only be used with requireMergeCommits")
 		}
 
-		if parsedRules.RequireMergeTags == true && parsedRules.RequireUpToDate == false {
-			return nil, fmt.Errorf("requireMergeTags can only be used with requireUpToDate")
+		if parsedRules.RequireCountersigning == true && parsedRules.RequireUpToDate == false {
+			return nil, fmt.Errorf("requireCountersigning can only be used with requireUpToDate")
 		}
 
 		parsedRepos = append(parsedRepos, ParsedRepository{

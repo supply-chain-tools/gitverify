@@ -36,7 +36,7 @@
     "requireSignedTags": true,
     "requireMergeCommits": true,
     "requireUpToDate": true,
-    "requireMergeTags": false
+    "requireCountersigning": false
   },
   "protectedBranches": ["main"],
   "forgeId": "github.com",
@@ -97,7 +97,7 @@ contributions without a maintainer committing the change.
 | `rules.requireSignedTags`      | `true` (default), `false` | no       | Allow unsigned tags, `repository.exemptTags` is an alternative                                                                                                                                                     |
 | `rules.requireMergeCommits`    | `true` (default), `false` | no       | Require protected branches to use merge commits. Any conflicts must be resolved before merging.                                                                                                                    |
 | `rules.requireUpToDate`        | `true` (default), `false` | no       | For merges commits into protected branches, require the other branch to be up to date with the protected branch before merging.                                                                                    |
-| `rules.requireMergeTags`       | `true`, `false` (default) | no       | Require protected branches to use mergetags. The committer and tagger must be different maintainers. The tree of the merge commit must be the same as the tree in the tagged commit.                               |
+| `rules.requireCountersigning`  | `true`, `false` (default) | no       | Require protected branches to use countersinging via mergetags. The committer and tagger must be different identities. The tree of the merge commit must be the same as the tree in the tagged commit.             |
 
 
 ### Forge

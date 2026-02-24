@@ -519,11 +519,11 @@ func validateProtectedBranch(reference *plumbing.Reference, branchName string, s
 			}
 		}
 
-		if config.requireMergeTags {
+		if config.requireCountersigning {
 			metadata := commitMetadata[current.Hash]
 
 			if metadata.MergeTag == nil {
-				return fmt.Errorf("requireMergeTags is set, but no mergetag in commit %s", current.Hash.String())
+				return fmt.Errorf("requireCountersigning is set, but no mergetag in commit %s", current.Hash.String())
 			}
 
 			targetCommit, found := state.CommitMap[metadata.MergeTag.Target]
@@ -532,11 +532,11 @@ func validateProtectedBranch(reference *plumbing.Reference, branchName string, s
 			}
 
 			if current.TreeHash != targetCommit.TreeHash {
-				return fmt.Errorf("requireMergeTags is set, but commit tree and mergetag tree does not match for commit %s", current.Hash.String())
+				return fmt.Errorf("requireCountersigning is set, but commit tree and mergetag tree does not match for commit %s", current.Hash.String())
 			}
 
 			if metadata.MergeTag.Tagger.Email == current.Committer.Email {
-				return fmt.Errorf("committer and tagger cannot be the same when requireMergeTags is set for commit %s", current.Hash.String())
+				return fmt.Errorf("committer and tagger cannot be the same when requireCountersigning is set for commit %s", current.Hash.String())
 			}
 		}
 

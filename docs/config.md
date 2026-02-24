@@ -85,6 +85,15 @@ contributions without a maintainer committing the change.
 |----------------|--------------------|----------|------------------------------------|
 | `contributors` | list of emails     | no       | Must reference an `identity.email` |
 
+
+### Countersigners
+By default, any maintainer is allowed to countersign when `rules.requireCountersigning` is set. This can be restricted
+to `countersigners`.
+
+| Config           | Value              | Required | Description                        |
+|------------------|--------------------|----------|------------------------------------|
+| `countersigners` | list of emails     | no       | Must reference an `identity.email` |
+
 ### Rules
 | Config                         | Value                     | Required | Description                                                                                                                                                                                                        |
 |--------------------------------|---------------------------|----------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|

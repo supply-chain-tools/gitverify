@@ -17,6 +17,7 @@ import (
 type Config struct {
 	Type              string     `json:"_type"`
 	Identities        []Identity `json:"identities"`
+	Countersigners    []string   `json:"countersigners"`
 	Maintainers       []string   `json:"maintainers"`
 	Contributors      []string   `json:"contributors"`
 	Rules             *Rules     `json:"rules"`
@@ -61,6 +62,7 @@ type Repository struct {
 	After []After `json:"after"`
 
 	Identities        []Identity `json:"identities"`
+	Countersigners    []string   `json:"countersigners"`
 	Maintainers       []string   `json:"maintainers"`
 	Contributors      []string   `json:"contributors"`
 	Rules             *Rules     `json:"rules"`
@@ -92,6 +94,7 @@ type ParsedRepository struct {
 	After []After
 
 	Identities        []Identity
+	Countersigners    []string
 	Maintainers       []string
 	Contributors      []string
 	Rules             ParsedRules
@@ -196,6 +199,11 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 			return nil, err
 		}
 
+		countersigners, err := combineCountersigners(config.Countersigners, repo.Countersigners)
+		if err != nil {
+			return nil, err
+		}
+
 		maintainers, err := combineMaintainers(config.Maintainers, repo.Maintainers)
 		if err != nil {
 			return nil, err
@@ -206,7 +214,7 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 			return nil, err
 		}
 
-		err = ensurePresent(identities, maintainers, contributors)
+		err = ensurePresent(identities, countersigners, maintainers, contributors)
 		if err != nil {
 			return nil, err
 		}
@@ -284,10 +292,15 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 			return nil, fmt.Errorf("requireCountersigning can only be used with requireUpToDate")
 		}
 
+		if len(countersigners) > 0 && parsedRules.RequireCountersigning == false {
+			return nil, fmt.Errorf("countersigners can only be used with requireCountersigning")
+		}
+
 		parsedRepos = append(parsedRepos, ParsedRepository{
 			Uri:               uri,
 			After:             after,
 			Identities:        identities,
+			Countersigners:    countersigners,
 			Maintainers:       maintainers,
 			Contributors:      contributors,
 			Rules:             parsedRules,
@@ -305,18 +318,24 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 	return &parsedConfig, nil
 }
 
-func ensurePresent(identities []Identity, maintainers []string, contributors []string) error {
+func ensurePresent(identities []Identity, countersigners []string, maintainers []string, contributors []string) error {
 	identityEmails := hashset.New[string]()
 
 	for _, identity := range identities {
 		identityEmails.Add(identity.Email)
 	}
 
+	countersignerEmails := hashset.New[string](countersigners...)
 	maintainerEmails := hashset.New[string](maintainers...)
 	contributorEmails := hashset.New[string](contributors...)
 
+	countersignerDiff := countersignerEmails.Difference(identityEmails)
 	maintainerDiff := maintainerEmails.Difference(identityEmails)
 	contributorDiff := contributorEmails.Difference(identityEmails)
+
+	if countersignerDiff.Size() > 0 {
+		return fmt.Errorf("countersigners '%s' not present in identities", strings.Join(countersignerDiff.Values(), ","))
+	}
 
 	if maintainerDiff.Size() > 0 {
 		return fmt.Errorf("maintainers '%s' not present in identities", strings.Join(maintainerDiff.Values(), ","))
@@ -408,6 +427,14 @@ func combineIdentities(global []Identity, local []Identity) ([]Identity, error) 
 		return global, nil
 	} else {
 		return nil, fmt.Errorf("no identities specified")
+	}
+}
+
+func combineCountersigners(global []string, local []string) ([]string, error) {
+	if len(local) != 0 {
+		return local, nil
+	} else {
+		return global, nil
 	}
 }
 

@@ -5,8 +5,9 @@ import (
 	"crypto/sha512"
 	"encoding/base64"
 	"fmt"
-	"golang.org/x/crypto/ssh"
 	"strings"
+
+	"golang.org/x/crypto/ssh"
 )
 
 type SSHSig struct {
@@ -31,7 +32,7 @@ func validateSSH(content string, signature string, identity identity, config *Re
 
 	trustedKey, found := identity.sshPublicKeys[sshSig.PublicKey]
 	if found {
-		err = verifySignature(*trustedKey, content, sshSig, namespaceSSH, config.allowSSHSHA256)
+		err = verifySignature(*trustedKey, content, sshSig, namespaceSSH, config.allowSSHSHA256, config.requireSHA512)
 		if err != nil {
 			return err
 		}
@@ -66,7 +67,7 @@ func validateSSH(content string, signature string, identity identity, config *Re
 	return nil
 }
 
-func verifySSHSignature(key string, signature string, data string, namespace string, allowSHA256 bool) error {
+func verifySSHSignature(key string, signature string, data string, namespace string, allowSHA256 bool, requireSHA512 bool) error {
 	publicKey, err := decodeAndParseSSHPublicKey(key)
 	if err != nil {
 		return err
@@ -77,7 +78,7 @@ func verifySSHSignature(key string, signature string, data string, namespace str
 		return err
 	}
 
-	err = verifySignature(publicKey, data, sshSig, namespace, allowSHA256)
+	err = verifySignature(publicKey, data, sshSig, namespace, allowSHA256, requireSHA512)
 	if err != nil {
 		return err
 	}
@@ -120,8 +121,16 @@ func decodeAndParseSSHSignature(signature string) (*SSHSig, error) {
 	return sshSig, nil
 }
 
-func verifySignature(maintainerAllowedKey ssh.PublicKey, message string, signature *SSHSig, namespace string, allowSHA256 bool) error {
+func verifySignature(maintainerAllowedKey ssh.PublicKey, message string, signature *SSHSig, namespace string, allowSHA256 bool, requireSHA512 bool) error {
 	var h []byte
+
+	if allowSHA256 && requireSHA512 {
+		return fmt.Errorf("invalid arguments: allowSHA256 and requireSHA512 cannot both the true")
+	}
+
+	if requireSHA512 && signature.HashAlgorithm != "sha512" {
+		return fmt.Errorf("SHA-512 required for SSH, got: %s", signature.HashAlgorithm)
+	}
 
 	switch signature.HashAlgorithm {
 	case "sha256":

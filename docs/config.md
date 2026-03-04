@@ -98,6 +98,7 @@ contributions without a maintainer committing the change.
 | `rules.requireMergeCommits`    | `true` (default), `false` | no       | Require protected branches to use merge commits. Any conflicts must be resolved before merging.                                                                                                                    |
 | `rules.requireUpToDate`        | `true` (default), `false` | no       | For merges commits into protected branches, require the other branch to be up to date with the protected branch before merging.                                                                                    |
 | `rules.requireCountersigning`  | `true`, `false` (default) | no       | Require protected branches to use countersinging via mergetags. The committer and tagger must be different identities. The tree of the merge commit must be the same as the tree in the tagged commit.             |
+| `rules.requireSha512`          | `true`, `false` (default) | no       | Require SHA-512 in countersigned commits and other places like `after.sha512`, `exemptTag.hash.sha512` and SSH signatures (GPG currently not supported).                                                           |
 
 
 ### Forge

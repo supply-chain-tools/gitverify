@@ -59,7 +59,7 @@ func Verify(repo *git.Repository, state *gitkit.RepoState, repoConfig *RepoConfi
 			return err
 		}
 
-		err = validateProtectedBranches(repo, state, commitMetadata, repoConfig)
+		err = validateProtectedBranches(repo, state, commitMetadata, repoConfig, gitHashSHA512)
 		if err != nil {
 			return err
 		}
@@ -307,7 +307,7 @@ func validateOpts(opts *ValidateOptions, repo *git.Repository, state *gitkit.Rep
 				}
 
 				if isProtected {
-					err := validateProtectedBranch(reference, branchName, state, commitMetadata, config)
+					err := validateProtectedBranch(reference, branchName, state, commitMetadata, config, gitHashSHA512)
 					if err != nil {
 						return fmt.Errorf("failed to validate protected branch '%s' rules: %w", reference.Name(), err)
 					}
@@ -468,7 +468,7 @@ func isLeftDescendant(a *object.Commit, b *object.Commit, state *gitkit.RepoStat
 	}
 }
 
-func validateProtectedBranches(repo *git.Repository, state *gitkit.RepoState, commitMetadata map[plumbing.Hash]*CommitData, config *RepoConfig) error {
+func validateProtectedBranches(repo *git.Repository, state *gitkit.RepoState, commitMetadata map[plumbing.Hash]*CommitData, config *RepoConfig, gitHashSHA512 githash.GitHash) error {
 	remotes, err := repo.References()
 	if err != nil {
 		return err
@@ -478,7 +478,7 @@ func validateProtectedBranches(repo *git.Repository, state *gitkit.RepoState, co
 		isProtected, branchName := isProtected(reference, config)
 
 		if isProtected {
-			err := validateProtectedBranch(reference, branchName, state, commitMetadata, config)
+			err := validateProtectedBranch(reference, branchName, state, commitMetadata, config, gitHashSHA512)
 			if err != nil {
 				return err
 			}
@@ -492,7 +492,7 @@ func validateProtectedBranches(repo *git.Repository, state *gitkit.RepoState, co
 	return nil
 }
 
-func validateProtectedBranch(reference *plumbing.Reference, branchName string, state *gitkit.RepoState, commitMetadata map[plumbing.Hash]*CommitData, config *RepoConfig) error {
+func validateProtectedBranch(reference *plumbing.Reference, branchName string, state *gitkit.RepoState, commitMetadata map[plumbing.Hash]*CommitData, config *RepoConfig, gitHashSHA512 githash.GitHash) error {
 	targetAfter, found := config.branchToSHA1[branchName]
 	if !found {
 		return fmt.Errorf("protected branch '%s' without matching after branch", branchName)
@@ -537,6 +537,42 @@ func validateProtectedBranch(reference *plumbing.Reference, branchName string, s
 
 			if metadata.MergeTag.Tagger.Email == current.Committer.Email {
 				return fmt.Errorf("committer and tagger cannot be the same when requireCountersigning is set for commit %s", current.Hash.String())
+			}
+
+			if config.requireSHA512 {
+				messageLines := strings.Split(metadata.MergeTag.Message, "\n")
+				prefix := "Object-sha512: "
+
+				verified := false
+				for i := len(messageLines) - 1; i >= 0; i-- {
+					if strings.HasPrefix(messageLines[i], prefix) {
+						hash := strings.TrimPrefix(messageLines[i], prefix)
+						matched, err := regexp.MatchString(hexSHA512Regex, hash)
+						if err != nil {
+							return err
+						}
+
+						if !matched {
+							return fmt.Errorf("malformed Object-sha512 in merge commit: %s", current.Hash.String())
+						}
+
+						objectSHA512, err := gitHashSHA512.CommitSum(targetCommit.Hash)
+						if err != nil {
+							return err
+						}
+
+						if hex.EncodeToString(objectSHA512) == hash {
+							verified = true
+							break
+						}
+
+						return fmt.Errorf("wrong Object-sha512 in merge commit %s", current.Hash.String())
+					}
+				}
+
+				if !verified {
+					return fmt.Errorf("missing Object-sha512 in merge commit %s", current.Hash.String())
+				}
 			}
 		}
 

@@ -562,6 +562,8 @@ func validateProtectedBranch(reference *plumbing.Reference, branchName string, s
 						}
 
 						if hex.EncodeToString(objectSHA512) == hash {
+							// Note that this verifies the commit the mergetag points to, including its tree, which by the
+							// check above has to point to the same tree that is in the merge commit.
 							verified = true
 							break
 						}

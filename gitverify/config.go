@@ -54,6 +54,8 @@ type Rules struct {
 	RequireMergeCommits   *bool `json:"requireMergeCommits"`
 	RequireUpToDate       *bool `json:"requireUpToDate"`
 	RequireCountersigning *bool `json:"requireCountersigning"`
+
+	RequireSHA512 *bool `json:"requireSha512"`
 }
 
 type Repository struct {
@@ -113,6 +115,8 @@ type ParsedRules struct {
 	RequireMergeCommits   bool
 	RequireUpToDate       bool
 	RequireCountersigning bool
+
+	RequireSHA512 bool
 }
 
 func GetConfigPath(forge string, org string) (string, error) {
@@ -186,11 +190,6 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 			return nil, err
 		}
 
-		after, err := validateAfter(repo.After)
-		if err != nil {
-			return nil, err
-		}
-
 		identities, err := combineIdentities(config.Identities, repo.Identities)
 		if err != nil {
 			return nil, err
@@ -226,6 +225,7 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 			RequireMergeCommits:    true,
 			RequireUpToDate:        true,
 			RequireCountersigning:  false,
+			RequireSHA512:          false,
 		}
 
 		if rules != nil {
@@ -264,6 +264,20 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 			if rules.RequireCountersigning != nil {
 				parsedRules.RequireCountersigning = *rules.RequireCountersigning
 			}
+
+			if rules.RequireSHA512 != nil {
+				parsedRules.RequireSHA512 = *rules.RequireSHA512
+			}
+		}
+
+		after, err := validateAfter(repo.After, parsedRules.RequireSHA512)
+		if err != nil {
+			return nil, err
+		}
+
+		exemptTags, err := validateExemptTags(repo.ExemptTags, parsedRules.RequireSHA512)
+		if err != nil {
+			return nil, err
 		}
 
 		forgeRules, err := combineForgeRules(config.ForgeRules, repo.ForgeRules)
@@ -284,6 +298,18 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 			return nil, fmt.Errorf("requireCountersigning can only be used with requireUpToDate")
 		}
 
+		if parsedRules.RequireSHA512 == true && parsedRules.RequireCountersigning == false {
+			return nil, fmt.Errorf("requireSha512 can only be used with requireCountersigning")
+		}
+
+		if parsedRules.RequireSHA512 == true && parsedRules.AllowSSHSHA256 == true {
+			return nil, fmt.Errorf("allowSshSha256 cannot be used with requireSha512")
+		}
+
+		if parsedRules.RequireSHA512 == true && parsedRules.AllowGPGSignatures == true {
+			return nil, fmt.Errorf("requireSha512 does not currently support allowGpgSignatures")
+		}
+
 		parsedRepos = append(parsedRepos, ParsedRepository{
 			Uri:               uri,
 			After:             after,
@@ -293,7 +319,7 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 			Rules:             parsedRules,
 			ProtectedBranches: protectedBranches,
 			ForgeRules:        forgeRules,
-			ExemptedTags:      repo.ExemptTags,
+			ExemptedTags:      exemptTags,
 		})
 	}
 
@@ -350,7 +376,7 @@ func validateUri(uri string) (string, error) {
 	return uri, nil
 }
 
-func validateAfter(after []After) ([]After, error) {
+func validateAfter(after []After, requireSHA512 bool) ([]After, error) {
 	allBranches := hashset.New[string]()
 	allSHA1 := hashset.New[string]()
 	allSHA512 := hashset.New[string]()
@@ -373,6 +399,10 @@ func validateAfter(after []After) ([]After, error) {
 			if allSHA1.Contains(*a.SHA1) {
 				return nil, fmt.Errorf("after SHA1 '%s' must be unique", *a.SHA1)
 			}
+		}
+
+		if requireSHA512 && a.SHA512 == nil {
+			return nil, fmt.Errorf("after.sha512 is missing, but requireSha512 is set")
 		}
 
 		if a.SHA512 != nil {
@@ -399,6 +429,42 @@ func validateAfter(after []After) ([]After, error) {
 	}
 
 	return after, nil
+}
+
+func validateExemptTags(exemptTags []ExemptTag, requireSHA512 bool) ([]ExemptTag, error) {
+	for _, exemptTag := range exemptTags {
+		if exemptTag.Hash.SHA1 == nil && exemptTag.Hash.SHA512 == nil {
+			return nil, fmt.Errorf("either exemptTag.hash.sha1 or exemptTag.hash.sha512 must be set, or both")
+		}
+
+		if exemptTag.Hash.SHA1 != nil {
+			match, err := regexp.MatchString(hexSHA1Regex, *exemptTag.Hash.SHA1)
+			if err != nil {
+				return nil, err
+			}
+
+			if !match {
+				return nil, fmt.Errorf("exemptTag.hash.sha1 '%s' must be a 40 character hex", *exemptTag.Hash.SHA1)
+			}
+		}
+
+		if requireSHA512 && exemptTag.Hash.SHA512 == nil {
+			return nil, fmt.Errorf("exemptTag.hash.sha512 is missing, but requireSha512 is set")
+		}
+
+		if exemptTag.Hash.SHA512 != nil {
+			match, err := regexp.MatchString(hexSHA512Regex, *exemptTag.Hash.SHA512)
+			if err != nil {
+				return nil, err
+			}
+
+			if !match {
+				return nil, fmt.Errorf("exemptTag.hash.sha512 '%s' must be a 128 character hex", *exemptTag.Hash.SHA512)
+			}
+		}
+	}
+
+	return exemptTags, nil
 }
 
 func combineIdentities(global []Identity, local []Identity) ([]Identity, error) {

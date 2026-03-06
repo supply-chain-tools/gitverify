@@ -48,14 +48,14 @@ func TestSSSH(t *testing.T) {
 	}
 
 	for _, testCase := range testCases {
-		err := verifySSHSignature(testCase.Key, testCase.Signature, data, namespace, true)
+		err := verifySSHSignature(testCase.Key, testCase.Signature, data, namespace, true, false)
 		if err != nil {
 			t.Errorf("Verification failed for %s: %v", testCase.Name, err)
 		}
 	}
 
 	sha256TestCase := testCases[5]
-	err := verifySSHSignature(sha256TestCase.Key, sha256TestCase.Signature, data, namespace, false)
+	err := verifySSHSignature(sha256TestCase.Key, sha256TestCase.Signature, data, namespace, false, true)
 	if err == nil {
 		t.Errorf("Verification succeeded for %s: expected failure", sha256TestCase.Name)
 	}

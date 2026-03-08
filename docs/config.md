@@ -3,7 +3,7 @@
 ### All config options
 ```json
 {
-  "_type": "https://supply-chain-tools.github.io/schemas/gitverify/v0.1",
+  "_type": "https://supply-chain-tools.github.io/schemas/gitverify/v0.2",
   "identities": [
     {
       "email": "stian.kristoffersen@telenor.no",
@@ -36,14 +36,11 @@
     "requireSignedTags": true,
     "requireMergeCommits": true,
     "requireUpToDate": true,
-    "requireCountersigning": false
+    "requireCountersigning": false,
+    "requireSha512": false
   },
   "protectedBranches": ["main"],
-  "forgeId": "github.com",
-  "forgeRules": {
-    "allowMergeCommits": false,
-    "allowContentCommits": false
-  },
+  "trustedForge": "github.com",
   "repositories": [
     {
       "uri": " git+https://github.com/supply-chain-tools/gitverify.git",
@@ -102,12 +99,9 @@ contributions without a maintainer committing the change.
 
 
 ### Forge
-| Config                           | Value                     | Required | Description                                                                                    |
-|----------------------------------|---------------------------|----------|------------------------------------------------------------------------------------------------|
-| `forgeId`                        | `github.com`              | no       | Used to verify forge commits and interpret `identity.forgeUsername` and `identity.forgeUserId` |
-| `forgeRules`                     | object                    | no       |                                                                                                |
-| `forgeRules.allowMergeCommits`   | `true`, `false` (default) | no       | The forge is allowed to make merge commits (e.g. merge PRs)                                    |
-| `forgeRules.allowContentCommits` | `true`, `false` (default) | no       | The forge is allowed to make content changes (e.g. a user makes a change through web UI)       |
+| Config         | Value                        | Required | Description                                                                                                          |
+|----------------|------------------------------|----------|----------------------------------------------------------------------------------------------------------------------|
+| `trustedForge` | `github.com`, null (default) | no       | Allow the forge to sign commits. The author email will be used instead of the committer email when processing rules. |
 
 ### Protected branches
 Merge commits into protected branches are required to be done by a maintainer and cannot contain content changes.

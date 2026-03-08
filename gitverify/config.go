@@ -22,8 +22,7 @@ type Config struct {
 	Rules             *Rules     `json:"rules"`
 	ProtectedBranches []string   `json:"protectedBranches"`
 
-	ForgeId    *string     `json:"forgeId"`
-	ForgeRules *ForgeRules `json:"forgeRules"`
+	TrustedForge *string `json:"trustedForge"`
 
 	Repositories []Repository `json:"repositories"`
 }
@@ -35,11 +34,6 @@ type Identity struct {
 	SSHPublicKeys    []string `json:"sshPublicKeys"`
 	ForgeUsername    *string  `json:"forgeUsername"`
 	ForgeUserId      *string  `json:"forgeUserId"`
-}
-
-type ForgeRules struct {
-	AllowMergeCommits   bool `json:"allowMergeCommits"`
-	AllowContentCommits bool `json:"allowContentCommits"`
 }
 
 type Rules struct {
@@ -68,8 +62,6 @@ type Repository struct {
 	Rules             *Rules     `json:"rules"`
 	ProtectedBranches []string   `json:"protectedBranches"`
 
-	ForgeRules *ForgeRules `json:"forgeRules"`
-
 	ExemptTags []ExemptTag `json:"exemptTags"`
 }
 
@@ -85,7 +77,7 @@ type After struct {
 }
 
 type ParsedConfig struct {
-	ForgeId      *string
+	TrustedForge *string
 	Repositories []ParsedRepository
 }
 
@@ -99,7 +91,6 @@ type ParsedRepository struct {
 	Rules             ParsedRules
 	ProtectedBranches []string
 
-	ForgeRules   *ForgeRules
 	ExemptedTags []ExemptTag
 }
 
@@ -177,7 +168,7 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 
 	version := config.Type[len(prefix):]
 
-	expectedVersion := "v0.1"
+	expectedVersion := "v0.2"
 	if version != expectedVersion {
 		return nil, fmt.Errorf("got schema version %s, expected %s", version, expectedVersion)
 	}
@@ -280,11 +271,6 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 			return nil, err
 		}
 
-		forgeRules, err := combineForgeRules(config.ForgeRules, repo.ForgeRules)
-		if err != nil {
-			return nil, err
-		}
-
 		protectedBranches, err := combineProtectedBranches(config.ProtectedBranches, repo.ProtectedBranches)
 		if err != nil {
 			return nil, err
@@ -318,13 +304,12 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 			Contributors:      contributors,
 			Rules:             parsedRules,
 			ProtectedBranches: protectedBranches,
-			ForgeRules:        forgeRules,
 			ExemptedTags:      exemptTags,
 		})
 	}
 
 	parsedConfig := ParsedConfig{
-		ForgeId:      config.ForgeId,
+		TrustedForge: config.TrustedForge,
 		Repositories: parsedRepos,
 	}
 
@@ -512,13 +497,5 @@ func combineProtectedBranches(global []string, local []string) ([]string, error)
 		return global, nil
 	} else {
 		return nil, nil
-	}
-}
-
-func combineForgeRules(global *ForgeRules, local *ForgeRules) (*ForgeRules, error) {
-	if local != nil {
-		return local, nil
-	} else {
-		return global, nil
 	}
 }

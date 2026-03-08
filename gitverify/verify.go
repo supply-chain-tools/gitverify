@@ -80,14 +80,14 @@ func validateCommit(commit *object.Commit, commitMetadata map[plumbing.Hash]*Com
 
 	email := commit.Committer.Email
 
-	if repoConfig.forge != nil {
-		if repoConfig.forge.email == email {
-			err := validateGPGCommit(commit, repoConfig.forge.gpgPublicKey)
+	if repoConfig.trustedForge != nil {
+		if repoConfig.trustedForge.email == email {
+			err := validateGPGCommit(commit, repoConfig.trustedForge.gpgPublicKey)
 			if err != nil {
 				return err
 			}
 
-			if !repoConfig.forge.allowMergeCommits && !repoConfig.forge.allowContentCommits {
+			if repoConfig.trustedForge == nil {
 				return fmt.Errorf("forge is not allowed to make commits: %s", commit.Hash.String())
 			}
 
@@ -97,19 +97,6 @@ func validateCommit(commit *object.Commit, commitMetadata map[plumbing.Hash]*Com
 				if !found {
 					return fmt.Errorf("author email '%s' not found for forge commit: %s", commit.Author.Email, commit.Hash.String())
 				}
-			}
-
-			if !repoConfig.forge.allowMergeCommits && len(commit.ParentHashes) > 1 {
-				return fmt.Errorf("up to one parent hash supported for forge: %s", commit.Hash.String())
-			}
-
-			if repoConfig.forge.allowMergeCommits && !repoConfig.forge.allowContentCommits {
-				err := verifyMergeCommitNoContentChanges(commit)
-				if err != nil {
-					return fmt.Errorf("failed to verify forge merge commit %s to not have content changes: %s", commit.Hash.String(), err)
-				}
-
-				metadata.VerifiedToNotHaveContentChanges = true
 			}
 
 			return nil
@@ -581,7 +568,7 @@ func validateProtectedBranch(reference *plumbing.Reference, branchName string, s
 		if len(current.ParentHashes) == 2 {
 			_, found := config.maintainerEmails[current.Committer.Email]
 			if !found {
-				if config.forge != nil && current.Committer.Email == config.forge.email {
+				if config.trustedForge != nil && current.Committer.Email == config.trustedForge.email {
 					_, found = config.maintainerEmails[current.Author.Email]
 					if !found {
 						_, found = config.maintainerForgeEmails[current.Author.Email]

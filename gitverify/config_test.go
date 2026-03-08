@@ -8,7 +8,7 @@ import (
 func TestConfig(t *testing.T) {
 	config := `
 {
-  "_type": "https://supply-chain-tools.github.io/schemas/gitverify/v0.1",
+  "_type": "https://supply-chain-tools.github.io/schemas/gitverify/v0.2",
   "identities": [
     {
       "email": "a@example.internal",
@@ -26,7 +26,7 @@ func TestConfig(t *testing.T) {
     "requireSSHUserPresent": true,
     "requireSSHUserVerified": true
   },
-  "forgeId": "github.com",
+  "trustedForge": "github.com",
   "repositories": [
     {
       "uri": "git+https://github.com/foo/bar.git",
@@ -78,8 +78,8 @@ func TestConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if *parsed.ForgeId != "github.com" {
-		t.Errorf("ForgeId=%q, want %q", *parsed.ForgeId, "github.com")
+	if *parsed.TrustedForge != "github.com" {
+		t.Errorf("TrusteForge=%q, want %q", *parsed.TrustedForge, "github.com")
 	}
 
 	repo0 := parsed.Repositories[0]
@@ -125,10 +125,6 @@ func TestConfig(t *testing.T) {
 
 	if repo0.Rules.AllowGPGSignatures != false {
 		t.Errorf("repo0.Rules.AllowGPGSignatures=%t, want %t", repo0.Rules.AllowGPGSignatures, false)
-	}
-
-	if repo0.ForgeRules != nil {
-		t.Errorf("repo0.ForgeRules not nil")
 	}
 
 	repo1 := parsed.Repositories[1]
@@ -182,13 +178,5 @@ func TestConfig(t *testing.T) {
 
 	if repo1.Rules.AllowGPGSignatures != false {
 		t.Errorf("repo1.Rules.AllowGPGSignatures=%t, want %t", repo1.Rules.AllowGPGSignatures, false)
-	}
-
-	if repo1.ForgeRules.AllowMergeCommits != true {
-		t.Errorf("repo1.ForgeRules.AllowMergeCommits=%t, want %t", repo1.ForgeRules.AllowMergeCommits, true)
-	}
-
-	if repo1.ForgeRules.AllowContentCommits != false {
-		t.Errorf("repo1.ForgeRules.AllowContentCommits=%t, want %t", repo1.ForgeRules.AllowContentCommits, false)
 	}
 }

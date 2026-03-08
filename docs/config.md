@@ -68,7 +68,7 @@
 ### Maintainers and Contributors
 Maintainers are allowed to sign any commit or tag. Contributors are not allowed to sign tags. Merge commits into
 `protectedBranches` will be verified to be from maintainers, not contributors.
-If `forge.allowMergeCommit` or `forge.allowContentCommit` is set, then the author is verified to match `maintainers`
+If `trustedForge` is set, then the author is verified to match `maintainers`
 or `contributors` following the same rules as if they made the commit themselves.
 
 The difference between `maintainers` and `contributors` might change in the future. The main goal is to allow for outside
@@ -104,7 +104,7 @@ contributions without a maintainer committing the change.
 | `trustedForge` | `github.com`, null (default) | no       | Allow the forge to sign commits. The author email will be used instead of the committer email when processing rules. |
 
 ### Protected branches
-Merge commits into protected branches are required to be done by a maintainer and cannot contain content changes.
+Merge commits into protected branches are required to be done by a maintainer.
 When `requireMergeCommits` is set, only merge commits are allowed into the protected branch (no rebase/squash/plain commit).
 
 | Config              | Value                | Required | Description  |
@@ -144,5 +144,4 @@ $ gitverify after-candidates
 | `repository.contributors`      | `contributors`       | no       | Override global `contributors` section      |
 | `repository.rules`             | `rules`              | no       | Override global `rules` section             |
 | `repository.protectedBranches` | `protectedBranches`  | no       | Override global `protectedBranches` section |
-| `repository.forgeRules`        | `forgeRules`         | no       | Override global `forgeRules` section        |
 

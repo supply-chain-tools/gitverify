@@ -58,10 +58,6 @@ func TestConfig(t *testing.T) {
         "allowSSHSignatures": true,
         "requireSSHUserPresent": false,
         "requireSSHUserVerified": false
-      },
-      "forgeRules": {
-        "allowMergeCommits": true,
-        "allowContentCommits": false
       }
     }
   ]

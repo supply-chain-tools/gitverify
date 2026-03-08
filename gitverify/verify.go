@@ -580,16 +580,6 @@ func validateProtectedBranch(reference *plumbing.Reference, branchName string, s
 				}
 			}
 
-			metadata := commitMetadata[current.Hash]
-			if !metadata.VerifiedToNotHaveContentChanges {
-				err := verifyMergeCommitNoContentChanges(current)
-				if err != nil {
-					return fmt.Errorf("failed to verify protected merge commit %s to not have content changes: %s", current.Hash.String(), err)
-				}
-
-				metadata.VerifiedToNotHaveContentChanges = true
-			}
-
 			if config.requireUpToDate {
 				mergeBase, err := gitMergeBase(current.ParentHashes[0].String(), current.ParentHashes[1].String())
 				if err != nil {

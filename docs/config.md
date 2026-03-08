@@ -40,7 +40,7 @@
     "requireSha512": false
   },
   "protectedBranches": ["main"],
-  "trustedForge": "github.com",
+  "trustedForge": null,
   "repositories": [
     {
       "uri": " git+https://github.com/supply-chain-tools/gitverify.git",

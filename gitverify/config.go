@@ -45,7 +45,6 @@ type Rules struct {
 
 	RequireSignedTags     *bool `json:"RequireSignedTags"`
 	RequireMergeCommits   *bool `json:"requireMergeCommits"`
-	RequireUpToDate       *bool `json:"requireUpToDate"`
 	RequireCountersigning *bool `json:"requireCountersigning"`
 
 	RequireSHA512 *bool `json:"requireSha512"`
@@ -103,7 +102,6 @@ type ParsedRules struct {
 
 	RequireSignedTags     bool
 	RequireMergeCommits   bool
-	RequireUpToDate       bool
 	RequireCountersigning bool
 
 	RequireSHA512 bool
@@ -213,7 +211,6 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 			AllowGPGSignatures:     false,
 			RequireSignedTags:      true,
 			RequireMergeCommits:    true,
-			RequireUpToDate:        true,
 			RequireCountersigning:  false,
 			RequireSHA512:          false,
 		}
@@ -247,10 +244,6 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 				parsedRules.RequireMergeCommits = *rules.RequireMergeCommits
 			}
 
-			if rules.RequireUpToDate != nil {
-				parsedRules.RequireUpToDate = *rules.RequireUpToDate
-			}
-
 			if rules.RequireCountersigning != nil {
 				parsedRules.RequireCountersigning = *rules.RequireCountersigning
 			}
@@ -277,10 +270,6 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 
 		if parsedRules.RequireCountersigning == true && parsedRules.RequireMergeCommits == false {
 			return nil, fmt.Errorf("requireCountersigning can only be used with requireMergeCommits")
-		}
-
-		if parsedRules.RequireCountersigning == true && parsedRules.RequireUpToDate == false {
-			return nil, fmt.Errorf("requireCountersigning can only be used with requireUpToDate")
 		}
 
 		if parsedRules.RequireCountersigning == true && config.TrustedForge != nil {

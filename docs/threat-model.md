@@ -12,8 +12,8 @@ To make the analysis easier, and because it's not common to have more, `gitverif
 error if any commit has more than two parents.
 
 ### Contributors
-Contributors are not allowed to sign tags or merge commits into protected branches. By not allowing forges to create
-merge commits (`forgeRules.allowMergeCommits: false`), only maintainer keys are allowed to sign merges into protected branches.
+Contributors are not allowed to sign tags or merge commits into protected branches. By not allowing trusting any forge
+(not setting `trustedForge`), only maintainer keys are allowed to sign merges into protected branches.
 
 ### Forge
 A `trustedForge` can be allowed to sign commits. The author of forge commits is verified to match a `maintainer` or
@@ -30,9 +30,7 @@ Teleportation attacks where the `refs/tags/<tag>` differ from the annotated tag 
 
 ### Protected Branches
 Merge commits into protected branches are verified to be made by maintainers directly or by the forge on their behalf if
-`forge.AllowMergeCommit: true`. If `rules.requireUpToDate: true`, then the branch being merged into the protected
-branch needs to be up-to-date with the protected branch before the merge. This is useful to make sure that the feature
-branch is reviewed and tested in combination with the protected branch before it is merged.
+`trustedForge` is set.
 
 Rules that apply to a protected branch are run for all matching local (`refs/heads/<protected branch>`) and
 upstream (`refs/remotes/<remotes>/<protected branch>`) branches.
@@ -86,7 +84,7 @@ teleportation target.
 The analysis is similar for other branches, like release branches. We could also add detection if a suitable teleportation target exists,
 but an attacker controlling the state might hide it.
 
-If `forgeRules.allowMergeCommits` is set, then the forge can create merge commits rather than relying on a merge target
+If `trustedForge` is set, then the forge can create merge commits rather than relying on a merge target
 to exist. One malicious merge commit can be hard to detect, especially if the same commit will be performed by the
 maintainers through the forge at a later stage.
 

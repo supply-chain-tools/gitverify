@@ -526,6 +526,11 @@ func validateProtectedBranch(reference *plumbing.Reference, branchName string, s
 				return fmt.Errorf("committer and tagger cannot be the same when requireCountersigning is set for commit %s", current.Hash.String())
 			}
 
+			err = verifyConnected(current.ParentHashes[1], current.ParentHashes[0], state)
+			if err != nil {
+				return err
+			}
+
 			if config.requireSHA512 {
 				messageLines := strings.Split(metadata.MergeTag.Message, "\n")
 				prefix := "Object-sha512: "
@@ -579,17 +584,6 @@ func validateProtectedBranch(reference *plumbing.Reference, branchName string, s
 					return fmt.Errorf("merge commit %s made by %s which is not a maintainer", current.Hash.String(), current.Committer.Email)
 				}
 			}
-
-			if config.requireUpToDate {
-				mergeBase, err := gitMergeBase(current.ParentHashes[0].String(), current.ParentHashes[1].String())
-				if err != nil {
-					return fmt.Errorf("failed to find merge base for parent commits of %s: %w", current.Hash.String(), err)
-				}
-
-				if mergeBase != current.ParentHashes[0].String() {
-					return fmt.Errorf("second parent of %s is not up to date with first", current.Hash.String())
-				}
-			}
 		}
 
 		if len(current.ParentHashes) == 0 {
@@ -603,6 +597,33 @@ func validateProtectedBranch(reference *plumbing.Reference, branchName string, s
 	}
 
 	return nil
+}
+
+func verifyConnected(start plumbing.Hash, target plumbing.Hash, state *gitkit.RepoState) error {
+	if start == target {
+		return fmt.Errorf("start and target must be different, got %s", start.String())
+	}
+
+	queue := []plumbing.Hash{start}
+	for len(queue) > 0 {
+		currentHash := queue[0]
+		queue = queue[1:]
+
+		if currentHash == target {
+			return nil
+		}
+
+		current, found := state.CommitMap[start]
+		if !found {
+			return fmt.Errorf("did not find commit %s", start.String())
+		}
+
+		for _, p := range current.ParentHashes {
+			queue = append(queue, p)
+		}
+	}
+
+	return fmt.Errorf("no path from %s to %s", start, target.String())
 }
 
 func validateTags(repo *git.Repository, state *gitkit.RepoState, repoConfig *RepoConfig, gitHashSHA1 githash.GitHash, gitHashSHA512 githash.GitHash) error {

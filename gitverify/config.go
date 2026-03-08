@@ -284,6 +284,10 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 			return nil, fmt.Errorf("requireCountersigning can only be used with requireUpToDate")
 		}
 
+		if parsedRules.RequireCountersigning == true && config.TrustedForge != nil {
+			return nil, fmt.Errorf("trustedForge cannot be used with requireCountersigning")
+		}
+
 		if parsedRules.RequireSHA512 == true && parsedRules.RequireCountersigning == false {
 			return nil, fmt.Errorf("requireSha512 can only be used with requireCountersigning")
 		}

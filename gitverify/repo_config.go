@@ -152,23 +152,6 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 				contributorForgeEmails[forgeEmail] = identityEntry
 			}
 		}
-
-		for _, additionalEmail := range i.AdditionalEmails {
-			if allEmails.Contains(additionalEmail) {
-				return nil, fmt.Errorf("duplicate email '%s' found in repository '%s'", additionalEmail, repoUri)
-			}
-
-			allEmails.Add(additionalEmail)
-			if maintainerSet.Contains(i.Email) {
-				maintainerEmails[additionalEmail] = identityEntry
-				maintainerOrContributor[i.Email] = identityEntry
-			}
-
-			if contributorSet.Contains(additionalEmail) {
-				contributorEmails[i.Email] = identityEntry
-				maintainerOrContributor[i.Email] = identityEntry
-			}
-		}
 	}
 
 	var f *forge

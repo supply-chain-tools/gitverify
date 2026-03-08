@@ -43,7 +43,6 @@ func TestConfig(t *testing.T) {
         {
           "email": "b@example.internal",
           "sshPublicKeys": ["ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBH2r8kV3iq50ugWjL3l4OaLEhGNUhMPc/A2UWQSix/I5XEG6sfnXZre06ROUF2DaWxiACUiLhO1UDUY0guun3ZQ="],
-          "additionalEmails" : ["b2@example.internal"],
           "forgeUsername" : "b",
           "forgeUserId" : "1234"
         },
@@ -91,10 +90,6 @@ func TestConfig(t *testing.T) {
 		t.Errorf("repo0.Identities[0].Email=%q, want %q", repo0.Identities[0].Email, "a@example.internal")
 	}
 
-	if repo0.Identities[0].AdditionalEmails != nil {
-		t.Errorf("repo0.Identities[0].AdditionalEmails=%q, want nil", repo0.Identities[0].AdditionalEmails)
-	}
-
 	if repo0.Identities[0].SSHPublicKeys[0] != "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIAQv90+kSOSKZYlMoWO0eX6QZ1Nt5n2BviA4vFx3lgK" {
 		t.Errorf("repo0.Identities[0].SSHPublicKeys[0]=%q, want %q", repo0.Identities[0].SSHPublicKeys[0], "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIAQv90+kSOSKZYlMoWO0eX6QZ1Nt5n2BviA4vFx3lgK")
 	}
@@ -134,10 +129,6 @@ func TestConfig(t *testing.T) {
 
 	if repo1.Identities[0].Email != "b@example.internal" {
 		t.Errorf("repo1.Identities[0].Email=%q, want %q", repo1.Identities[0].Email, "a@example.internal")
-	}
-
-	if repo1.Identities[0].AdditionalEmails[0] != "b2@example.internal" {
-		t.Errorf("repo1.Identities[0].AdditionalEmails[0]=%q, want %q", repo1.Identities[0].AdditionalEmails[0], "b2@example.internal")
 	}
 
 	if repo1.Identities[0].SSHPublicKeys[0] != "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBH2r8kV3iq50ugWjL3l4OaLEhGNUhMPc/A2UWQSix/I5XEG6sfnXZre06ROUF2DaWxiACUiLhO1UDUY0guun3ZQ=" {

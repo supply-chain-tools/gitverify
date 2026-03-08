@@ -28,12 +28,11 @@ type Config struct {
 }
 
 type Identity struct {
-	Email            string   `json:"email"`
-	AdditionalEmails []string `json:"additionalEmails"`
-	GPGPublicKeys    []string `json:"gpgPublicKeys"`
-	SSHPublicKeys    []string `json:"sshPublicKeys"`
-	ForgeUsername    *string  `json:"forgeUsername"`
-	ForgeUserId      *string  `json:"forgeUserId"`
+	Email         string   `json:"email"`
+	GPGPublicKeys []string `json:"gpgPublicKeys"`
+	SSHPublicKeys []string `json:"sshPublicKeys"`
+	ForgeUsername *string  `json:"forgeUsername"`
+	ForgeUserId   *string  `json:"forgeUserId"`
 }
 
 type Rules struct {

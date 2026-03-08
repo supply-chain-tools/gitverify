@@ -63,7 +63,6 @@
 | `identity.gpgPublicKeys`    | list of GPG public keys | no       | Must be unique for a `repository`, only one GPG key is currently supported, standard armored string with newlines encoded as `\n` |
 | `identity.forgeUsername`    | string                  | no       | E.g. GitHub login name                                                                                                            |
 | `identity.forgeUserId`      | string                  | no       | E.g. GitHub user id                                                                                                               |
-| `identity.additionalEmails` | list of emails          | no       | If more than one email should be associated with this identity                                                                    |
 
 ### Maintainers and Contributors
 Maintainers are allowed to sign any commit or tag. Contributors are not allowed to sign tags. Merge commits into

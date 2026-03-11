@@ -43,7 +43,7 @@ func Tag(prNumber int, message string) error {
 		sb.WriteString(fmt.Sprintf("%s\n\n", message))
 	}
 
-	sb.WriteString(fmt.Sprintf("Object-sha512: %s\n", objectSHA512Hex))
+	sb.WriteString(fmt.Sprintf("gitverify-object-sha512: %s\n", objectSHA512Hex))
 
 	m := sb.String()
 	fmt.Print(m)

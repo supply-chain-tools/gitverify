@@ -36,7 +36,7 @@ PR https://github.com/supply-chain-tools/gitverify/pull/1
 
 optional message
 
-Object-sha512: <hex encoded SHA-512 of the commit the tag points to>
+Gitverify-object-sha512: <hex encoded SHA-512 of the commit the tag points to>
 ```
 
 ### Merge commit message

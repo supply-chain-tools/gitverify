@@ -541,7 +541,7 @@ func validateProtectedBranch(reference *plumbing.Reference, branchName string, s
 
 			if config.requireSHA512 {
 				messageLines := strings.Split(metadata.MergeTag.Message, "\n")
-				prefix := "Object-sha512: "
+				prefix := "Gitverify-object-sha512: "
 
 				verified := false
 				for i := len(messageLines) - 1; i >= 0; i-- {

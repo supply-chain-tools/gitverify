@@ -12,20 +12,14 @@ To make the analysis easier, and because it's not common to have more, `gitverif
 error if any commit has more than two parents.
 
 ### Contributors
-Contributors are not allowed to sign tags or merge commits into protected branches. By not allowing forges to create
-merge commits (`forgeRules.allowMergeCommits: false`), only maintainer keys are allowed to sign merges into protected branches.
+Contributors are not allowed to sign tags or merge commits into protected branches. By not allowing trusting any forge
+(not setting `trustedForge`), only maintainer keys are allowed to sign merges into protected branches.
 
 ### Forge
-The forge can be allowed to merge PRs (`forgeRules.allowMergeCommits: true`), but not make content changes
-(`forgeRules.allowContentCommits: false`). While this reduces the attack surface compared to arbitrary commits 
-it should not be used if the forge is untrusted without other mitigations. Mitigations could include reviewing the
-merges before cutting a release in a way the forge cannot tamper with.
+A `trustedForge` can be allowed to sign commits. The author of forge commits is verified to match a `maintainer` or
+`contributor` so that the same rules can be applied as if it was signed with the `maintainer`'s or `contributor`'s key.
 
-The author of forge commits is verified to match a `maintainer` or `contributor` so that the same rules can be applied
-as if it was signed with the `maintainer`'s or `contributor`'s key.
-
-Metadata manipulation attacks are separate from the `forgeRules.allowMergeCommits` and `forgeRules.allowContentCommits`
-settings.
+This option cannot be used if the goal is to mitigate against a compromised forge.
 
 ### Tags
 Teleportation attacks on signed annotated tags are detected. Lightweight tags cannot
@@ -36,9 +30,7 @@ Teleportation attacks where the `refs/tags/<tag>` differ from the annotated tag 
 
 ### Protected Branches
 Merge commits into protected branches are verified to be made by maintainers directly or by the forge on their behalf if
-`forge.AllowMergeCommit: true`. If `rules.requireUpToDate: true`, then the branch being merged into the protected
-branch needs to be up-to-date with the protected branch before the merge. This is useful to make sure that the feature
-branch is reviewed and tested in combination with the protected branch before it is merged.
+`trustedForge` is set.
 
 Rules that apply to a protected branch are run for all matching local (`refs/heads/<protected branch>`) and
 upstream (`refs/remotes/<remotes>/<protected branch>`) branches.
@@ -71,32 +63,6 @@ The number of `after` should be minimized and be unique for the repository.
 
 When both `after.sha1` and `after.sha512` are set then they are verified to point to the same commit.
 
-### Content Changes in Merge Commits
-It can be useful to detect if a merge commit not only merged two branches, but introduced other changes like
-resolving a conflict or adding unrelated changes.
-
-In `gitverify` merge commits into a protected branch cannot contain content changes. The rationale is that feature branches
-will be used and that any conflicts should be resolved in the feature branch before merging.
-
-Forges can be allowed to merge PRs but not make content changes by setting `forgeRules.allowMergeCommits: true` and
-`forgeRules.allowContentCommits: false`.
-
-The test for content changes in merge commits is the same for protected branches and forges. A [`git merge-tree`](https://git-scm.com/docs/git-merge-tree)
-is performed and the resulting merged tree is compared to the tree in the commit. I.e. not allowing a content
-change means that the file tree in the resulting commit must match merging the two parents with the [default merge strategy](https://git-scm.com/docs/git-merge#_merge_strategies).
-Hopefully, using the default strategy is common, otherwise we might have to support setting the merge strategy in the future.
-
-`--allow-unrelated-histories` is not set, so the two branches must share history.
-
-**Please note: the current approach should be changed:**
-- `git merge-tree` creates the merged object tree in the repository. In the common case, this will be identical
-  to the existing tree that is being verified, but if they differ it will have crated new state.
-- `git merge-tree` recently got support for `--strategy-option`, but does not have support to set the strategy.
-  `--strategy-option` is left unset to be compatible with more versions of `git`. Since neither of these are set, if the
-  default behaviour of `git merge-tree` changes in the future, this will be a problem for the check. Similarly, if `git merge`
-  and `git merge-tree` diverge, it will be a problem.
-
-
 ### Metadata Manipulation Attacks
 Protected branches and tags can be tracked by clients through local state. This way deletion and rollback attacks are
 limited to when the local state was last updated.
@@ -118,7 +84,7 @@ teleportation target.
 The analysis is similar for other branches, like release branches. We could also add detection if a suitable teleportation target exists,
 but an attacker controlling the state might hide it.
 
-If `forgeRules.allowMergeCommits` is set, then the forge can create merge commits rather than relying on a merge target
+If `trustedForge` is set, then the forge can create merge commits rather than relying on a merge target
 to exist. One malicious merge commit can be hard to detect, especially if the same commit will be performed by the
 maintainers through the forge at a later stage.
 

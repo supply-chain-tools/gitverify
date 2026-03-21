@@ -75,7 +75,7 @@ func Merge(prNumber int, message string) error {
 	fmt.Print(m)
 
 	tagName := fmt.Sprintf("pr/%d", prNumber)
-	command := []string{"git", "merge", "-S", "-m", m, tagName}
+	command := []string{"git", "merge", "--no-ff", "-S", "-m", m, tagName}
 
 	cmd := exec.Command(command[0], command[1:]...)
 	cmd.Stdout = os.Stdout

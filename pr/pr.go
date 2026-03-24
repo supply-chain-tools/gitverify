@@ -14,7 +14,7 @@ import (
 	"github.com/supply-chain-tools/go-sandbox/gitverify"
 )
 
-func Tag(prNumber int, message string) error {
+func Tag(prNumber int, message string, version *string) error {
 	tagName := fmt.Sprintf("pr/%d", prNumber)
 
 	repo, err := openRepoFromCwd()
@@ -43,6 +43,9 @@ func Tag(prNumber int, message string) error {
 		sb.WriteString(fmt.Sprintf("%s\n\n", message))
 	}
 
+	if version != nil {
+		sb.WriteString(fmt.Sprintf("Gitverify-version: %s\n", *version))
+	}
 	sb.WriteString(fmt.Sprintf("Gitverify-object-sha512: %s\n", objectSHA512Hex))
 
 	m := sb.String()

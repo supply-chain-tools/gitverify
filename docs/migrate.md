@@ -11,7 +11,7 @@ This is the recommended way to start using `gitverify` with an existing reposito
 - All types of supported SSH signatures are allowed including security keys without user present and user verified.
 ```json
 {
-  "_type": "https://supply-chain-tools.github.io/schemas/gitverify/v0.1",
+  "_type": "https://supply-chain-tools.github.io/schemas/gitverify/v0.2",
   "identities": [
     {
       "email": "stian.kristoffersen@telenor.no",
@@ -33,11 +33,7 @@ This is the recommended way to start using `gitverify` with an existing reposito
     "requireSignedTags": false,
     "requireMergeCommits": false
   },
-  "forgeId": "github.com",
-  "forgeRules": {
-    "allowMergeCommits": true,
-    "allowContentCommits": true
-  },
+  "trustedForge": "github.com",
   "repositories": [
     {
       "uri": "git+https://github.com/supply-chain-tools/gitverify.git",

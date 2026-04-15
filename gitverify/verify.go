@@ -533,7 +533,7 @@ func validateProtectedBranch(reference *plumbing.Reference, branchName string, s
 
 			if config.requireSHA512 {
 				messageLines := strings.Split(metadata.MergeTag.Message, "\n")
-				prefix := "Object-sha512: "
+				prefix := "Gitverify-object-sha512: "
 
 				verified := false
 				for i := len(messageLines) - 1; i >= 0; i-- {
@@ -545,7 +545,7 @@ func validateProtectedBranch(reference *plumbing.Reference, branchName string, s
 						}
 
 						if !matched {
-							return fmt.Errorf("malformed Object-sha512 in merge commit: %s", current.Hash.String())
+							return fmt.Errorf("malformed Gitverify-object-sha512 in merge commit: %s", current.Hash.String())
 						}
 
 						objectSHA512, err := gitHashSHA512.CommitSum(targetCommit.Hash)
@@ -560,12 +560,12 @@ func validateProtectedBranch(reference *plumbing.Reference, branchName string, s
 							break
 						}
 
-						return fmt.Errorf("wrong Object-sha512 in merge commit %s", current.Hash.String())
+						return fmt.Errorf("wrong Gitverify-object-sha512 in merge commit %s", current.Hash.String())
 					}
 				}
 
 				if !verified {
-					return fmt.Errorf("missing Object-sha512 in merge commit %s", current.Hash.String())
+					return fmt.Errorf("missing Gitverify-object-sha512 in merge commit %s", current.Hash.String())
 				}
 			}
 		}

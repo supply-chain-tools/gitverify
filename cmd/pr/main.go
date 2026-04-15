@@ -19,9 +19,16 @@ COMMANDS
         merge
                 Merge a PR tag (merge tag 'pr/<PR number>' into the current branch).
 
-OPTIONS
+TAG OPTIONS
         --message
-                Message to include in tag/commit.
+                Message to include in tag.
+        --version
+                Version to include in tag.
+
+MERGE OPTIONS
+        --message
+                Message to include in the merge commit.
+
 
 Create a tag for PR 1
     $ pr tag 1
@@ -39,7 +46,7 @@ func main() {
 
 	switch optionsAndArgs.command {
 	case tag:
-		err = pr.Tag(optionsAndArgs.prNumber, optionsAndArgs.message)
+		err = pr.Tag(optionsAndArgs.prNumber, optionsAndArgs.message, optionsAndArgs.version)
 		if err != nil {
 			print(err.Error(), "\n")
 			os.Exit(1)
@@ -60,6 +67,7 @@ type optionsAndArgs struct {
 	command  Command
 	prNumber int
 	message  string
+	version  *string
 }
 
 type Command string
@@ -76,13 +84,14 @@ func parseOptionsAndArgs() (*optionsAndArgs, error) {
 
 	flags := flag.NewFlagSet("all", flag.ExitOnError)
 	var help, h, debugMode bool
-	var messageInput string
+	var messageInput, versionInput string
 	var prNumber int
 
 	flags.BoolVar(&help, "help", false, "")
 	flags.BoolVar(&h, "h", false, "")
 	flags.BoolVar(&debugMode, "debug", false, "")
 	flags.StringVar(&messageInput, "message", "", "")
+	flags.StringVar(&versionInput, "version", "", "")
 
 	if len(os.Args) < 2 {
 		print(usage)
@@ -122,6 +131,15 @@ func parseOptionsAndArgs() (*optionsAndArgs, error) {
 		return nil, fmt.Errorf("pr number must be positive: %d", prNumber)
 	}
 
+	var version *string = nil
+	if versionInput != "" {
+		if command != tag {
+			return nil, fmt.Errorf("version can only be set for tag")
+		}
+
+		version = &versionInput
+	}
+
 	// FIXME verify message characters
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, opts))
@@ -131,6 +149,7 @@ func parseOptionsAndArgs() (*optionsAndArgs, error) {
 		command:  command,
 		message:  messageInput,
 		prNumber: prNumber,
+		version:  version,
 	}, nil
 }
 

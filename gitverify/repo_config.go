@@ -25,7 +25,7 @@ type RepoConfig struct {
 	maintainerForgeEmails              map[string]identity
 	contributorForgeEmails             map[string]identity
 	maintainerOrContributorForgeEmails map[string]identity
-	forge                              *forge
+	trustedForge                       *forge
 	allowSSHSignatures                 bool
 	requireSSHUserPresent              bool
 	requireSSHUserVerified             bool
@@ -35,7 +35,6 @@ type RepoConfig struct {
 	requireMergeCommits                bool
 	requireCountersigning              bool
 	requireSHA512                      bool
-	requireUpToDate                    bool
 	protectedBranches                  hashset.Set[string]
 	exemptedTags                       map[string]string
 	exemptedTagsSHA512                 map[string]string
@@ -50,10 +49,8 @@ type identity struct {
 }
 
 type forge struct {
-	email               string
-	gpgPublicKey        string
-	allowMergeCommits   bool
-	allowContentCommits bool
+	email        string
+	gpgPublicKey string
 }
 
 func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
@@ -117,7 +114,7 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 		}
 
 		var forgeEmail = ""
-		if config.ForgeId != nil && *config.ForgeId == gitHubForgeId && i.ForgeUsername != nil && i.ForgeUserId != nil {
+		if config.TrustedForge != nil && *config.TrustedForge == gitHubForgeId && i.ForgeUsername != nil && i.ForgeUserId != nil {
 			forgeEmail = gitHubUserEmail(*i.ForgeUserId, *i.ForgeUsername)
 
 			if allForgeEmails.Contains(forgeEmail) {
@@ -154,36 +151,17 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 				contributorForgeEmails[forgeEmail] = identityEntry
 			}
 		}
-
-		for _, additionalEmail := range i.AdditionalEmails {
-			if allEmails.Contains(additionalEmail) {
-				return nil, fmt.Errorf("duplicate email '%s' found in repository '%s'", additionalEmail, repoUri)
-			}
-
-			allEmails.Add(additionalEmail)
-			if maintainerSet.Contains(i.Email) {
-				maintainerEmails[additionalEmail] = identityEntry
-				maintainerOrContributor[i.Email] = identityEntry
-			}
-
-			if contributorSet.Contains(additionalEmail) {
-				contributorEmails[i.Email] = identityEntry
-				maintainerOrContributor[i.Email] = identityEntry
-			}
-		}
 	}
 
 	var f *forge
-	if config.ForgeId != nil {
-		if *config.ForgeId == gitHubForgeId {
+	if config.TrustedForge != nil {
+		if *config.TrustedForge == gitHubForgeId {
 			f = &forge{
-				email:               gitHubEmail,
-				gpgPublicKey:        gitHubKey,
-				allowMergeCommits:   repo.ForgeRules.AllowMergeCommits,
-				allowContentCommits: repo.ForgeRules.AllowContentCommits,
+				email:        gitHubEmail,
+				gpgPublicKey: gitHubKey,
 			}
 		} else {
-			return nil, fmt.Errorf("unsupported forge: %s", *config.ForgeId)
+			return nil, fmt.Errorf("unsupported forge: %s", *config.TrustedForge)
 		}
 	}
 
@@ -291,7 +269,7 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 		maintainerForgeEmails:              maintainerForgeEmails,
 		contributorForgeEmails:             contributorForgeEmails,
 		maintainerOrContributorForgeEmails: maintainerOrContributorForgeEmails,
-		forge:                              f,
+		trustedForge:                       f,
 		allowSSHSignatures:                 repo.Rules.AllowSSHSignatures,
 		requireSSHUserPresent:              repo.Rules.RequireSSHUserPresent,
 		requireSSHUserVerified:             repo.Rules.RequireSSHUserVerified,
@@ -301,7 +279,6 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 		requireMergeCommits:                repo.Rules.RequireMergeCommits,
 		requireCountersigning:              repo.Rules.RequireCountersigning,
 		requireSHA512:                      repo.Rules.RequireSHA512,
-		requireUpToDate:                    repo.Rules.RequireUpToDate,
 		exemptedTags:                       exemptedTagMap,
 		exemptedTagsSHA512:                 exemptedTagSHA512Map,
 		protectedBranches:                  protectedBranches,

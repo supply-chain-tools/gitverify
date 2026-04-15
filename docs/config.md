@@ -3,7 +3,7 @@
 ### All config options
 ```json
 {
-  "_type": "https://supply-chain-tools.github.io/schemas/gitverify/v0.1",
+  "_type": "https://supply-chain-tools.github.io/schemas/gitverify/v0.2",
   "identities": [
     {
       "email": "stian.kristoffersen@telenor.no",
@@ -36,14 +36,11 @@
     "requireSignedTags": true,
     "requireMergeCommits": true,
     "requireUpToDate": true,
-    "requireCountersigning": false
+    "requireCountersigning": false,
+    "requireSha512": false
   },
   "protectedBranches": ["main"],
-  "forgeId": "github.com",
-  "forgeRules": {
-    "allowMergeCommits": false,
-    "allowContentCommits": false
-  },
+  "trustedForge": null,
   "repositories": [
     {
       "uri": " git+https://github.com/supply-chain-tools/gitverify.git",
@@ -66,12 +63,11 @@
 | `identity.gpgPublicKeys`    | list of GPG public keys | no       | Must be unique for a `repository`, only one GPG key is currently supported, standard armored string with newlines encoded as `\n` |
 | `identity.forgeUsername`    | string                  | no       | E.g. GitHub login name                                                                                                            |
 | `identity.forgeUserId`      | string                  | no       | E.g. GitHub user id                                                                                                               |
-| `identity.additionalEmails` | list of emails          | no       | If more than one email should be associated with this identity                                                                    |
 
 ### Maintainers and Contributors
 Maintainers are allowed to sign any commit or tag. Contributors are not allowed to sign tags. Merge commits into
 `protectedBranches` will be verified to be from maintainers, not contributors.
-If `forge.allowMergeCommit` or `forge.allowContentCommit` is set, then the author is verified to match `maintainers`
+If `trustedForge` is set, then the author is verified to match `maintainers`
 or `contributors` following the same rules as if they made the commit themselves.
 
 The difference between `maintainers` and `contributors` might change in the future. The main goal is to allow for outside
@@ -102,15 +98,12 @@ contributions without a maintainer committing the change.
 
 
 ### Forge
-| Config                           | Value                     | Required | Description                                                                                    |
-|----------------------------------|---------------------------|----------|------------------------------------------------------------------------------------------------|
-| `forgeId`                        | `github.com`              | no       | Used to verify forge commits and interpret `identity.forgeUsername` and `identity.forgeUserId` |
-| `forgeRules`                     | object                    | no       |                                                                                                |
-| `forgeRules.allowMergeCommits`   | `true`, `false` (default) | no       | The forge is allowed to make merge commits (e.g. merge PRs)                                    |
-| `forgeRules.allowContentCommits` | `true`, `false` (default) | no       | The forge is allowed to make content changes (e.g. a user makes a change through web UI)       |
+| Config         | Value                        | Required | Description                                                                                                          |
+|----------------|------------------------------|----------|----------------------------------------------------------------------------------------------------------------------|
+| `trustedForge` | `github.com`, null (default) | no       | Allow the forge to sign commits. The author email will be used instead of the committer email when processing rules. |
 
 ### Protected branches
-Merge commits into protected branches are required to be done by a maintainer and cannot contain content changes.
+Merge commits into protected branches are required to be done by a maintainer.
 When `requireMergeCommits` is set, only merge commits are allowed into the protected branch (no rebase/squash/plain commit).
 
 | Config              | Value                | Required | Description  |
@@ -150,5 +143,4 @@ $ gitverify after-candidates
 | `repository.contributors`      | `contributors`       | no       | Override global `contributors` section      |
 | `repository.rules`             | `rules`              | no       | Override global `rules` section             |
 | `repository.protectedBranches` | `protectedBranches`  | no       | Override global `protectedBranches` section |
-| `repository.forgeRules`        | `forgeRules`         | no       | Override global `forgeRules` section        |
 

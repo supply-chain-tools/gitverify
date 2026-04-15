@@ -8,7 +8,7 @@ import (
 func TestConfig(t *testing.T) {
 	config := `
 {
-  "_type": "https://supply-chain-tools.github.io/schemas/gitverify/v0.1",
+  "_type": "https://supply-chain-tools.github.io/schemas/gitverify/v0.2",
   "identities": [
     {
       "email": "a@example.internal",
@@ -26,7 +26,7 @@ func TestConfig(t *testing.T) {
     "requireSSHUserPresent": true,
     "requireSSHUserVerified": true
   },
-  "forgeId": "github.com",
+  "trustedForge": "github.com",
   "repositories": [
     {
       "uri": "git+https://github.com/foo/bar.git",
@@ -43,7 +43,6 @@ func TestConfig(t *testing.T) {
         {
           "email": "b@example.internal",
           "sshPublicKeys": ["ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBH2r8kV3iq50ugWjL3l4OaLEhGNUhMPc/A2UWQSix/I5XEG6sfnXZre06ROUF2DaWxiACUiLhO1UDUY0guun3ZQ="],
-          "additionalEmails" : ["b2@example.internal"],
           "forgeUsername" : "b",
           "forgeUserId" : "1234"
         },
@@ -58,10 +57,6 @@ func TestConfig(t *testing.T) {
         "allowSSHSignatures": true,
         "requireSSHUserPresent": false,
         "requireSSHUserVerified": false
-      },
-      "forgeRules": {
-        "allowMergeCommits": true,
-        "allowContentCommits": false
       }
     }
   ]
@@ -78,8 +73,8 @@ func TestConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if *parsed.ForgeId != "github.com" {
-		t.Errorf("ForgeId=%q, want %q", *parsed.ForgeId, "github.com")
+	if *parsed.TrustedForge != "github.com" {
+		t.Errorf("TrusteForge=%q, want %q", *parsed.TrustedForge, "github.com")
 	}
 
 	repo0 := parsed.Repositories[0]
@@ -93,10 +88,6 @@ func TestConfig(t *testing.T) {
 
 	if repo0.Identities[0].Email != "a@example.internal" {
 		t.Errorf("repo0.Identities[0].Email=%q, want %q", repo0.Identities[0].Email, "a@example.internal")
-	}
-
-	if repo0.Identities[0].AdditionalEmails != nil {
-		t.Errorf("repo0.Identities[0].AdditionalEmails=%q, want nil", repo0.Identities[0].AdditionalEmails)
 	}
 
 	if repo0.Identities[0].SSHPublicKeys[0] != "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIAQv90+kSOSKZYlMoWO0eX6QZ1Nt5n2BviA4vFx3lgK" {
@@ -127,10 +118,6 @@ func TestConfig(t *testing.T) {
 		t.Errorf("repo0.Rules.AllowGPGSignatures=%t, want %t", repo0.Rules.AllowGPGSignatures, false)
 	}
 
-	if repo0.ForgeRules != nil {
-		t.Errorf("repo0.ForgeRules not nil")
-	}
-
 	repo1 := parsed.Repositories[1]
 	if repo1.Uri != "git+ssh://github.com/foo/baz.git" {
 		t.Errorf("repo1.Uri=%q, want %q", repo1.Uri, "git+ssh://github.com/foo/baz.git")
@@ -142,10 +129,6 @@ func TestConfig(t *testing.T) {
 
 	if repo1.Identities[0].Email != "b@example.internal" {
 		t.Errorf("repo1.Identities[0].Email=%q, want %q", repo1.Identities[0].Email, "a@example.internal")
-	}
-
-	if repo1.Identities[0].AdditionalEmails[0] != "b2@example.internal" {
-		t.Errorf("repo1.Identities[0].AdditionalEmails[0]=%q, want %q", repo1.Identities[0].AdditionalEmails[0], "b2@example.internal")
 	}
 
 	if repo1.Identities[0].SSHPublicKeys[0] != "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBH2r8kV3iq50ugWjL3l4OaLEhGNUhMPc/A2UWQSix/I5XEG6sfnXZre06ROUF2DaWxiACUiLhO1UDUY0guun3ZQ=" {
@@ -182,13 +165,5 @@ func TestConfig(t *testing.T) {
 
 	if repo1.Rules.AllowGPGSignatures != false {
 		t.Errorf("repo1.Rules.AllowGPGSignatures=%t, want %t", repo1.Rules.AllowGPGSignatures, false)
-	}
-
-	if repo1.ForgeRules.AllowMergeCommits != true {
-		t.Errorf("repo1.ForgeRules.AllowMergeCommits=%t, want %t", repo1.ForgeRules.AllowMergeCommits, true)
-	}
-
-	if repo1.ForgeRules.AllowContentCommits != false {
-		t.Errorf("repo1.ForgeRules.AllowContentCommits=%t, want %t", repo1.ForgeRules.AllowContentCommits, false)
 	}
 }

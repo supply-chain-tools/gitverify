@@ -80,14 +80,14 @@ func validateCommit(commit *object.Commit, commitMetadata map[plumbing.Hash]*Com
 
 	email := commit.Committer.Email
 
-	if repoConfig.forge != nil {
-		if repoConfig.forge.email == email {
-			err := validateGPGCommit(commit, repoConfig.forge.gpgPublicKey)
+	if repoConfig.trustedForge != nil {
+		if repoConfig.trustedForge.email == email {
+			err := validateGPGCommit(commit, repoConfig.trustedForge.gpgPublicKey)
 			if err != nil {
 				return err
 			}
 
-			if !repoConfig.forge.allowMergeCommits && !repoConfig.forge.allowContentCommits {
+			if repoConfig.trustedForge == nil {
 				return fmt.Errorf("forge is not allowed to make commits: %s", commit.Hash.String())
 			}
 
@@ -97,19 +97,6 @@ func validateCommit(commit *object.Commit, commitMetadata map[plumbing.Hash]*Com
 				if !found {
 					return fmt.Errorf("author email '%s' not found for forge commit: %s", commit.Author.Email, commit.Hash.String())
 				}
-			}
-
-			if !repoConfig.forge.allowMergeCommits && len(commit.ParentHashes) > 1 {
-				return fmt.Errorf("up to one parent hash supported for forge: %s", commit.Hash.String())
-			}
-
-			if repoConfig.forge.allowMergeCommits && !repoConfig.forge.allowContentCommits {
-				err := verifyMergeCommitNoContentChanges(commit)
-				if err != nil {
-					return fmt.Errorf("failed to verify forge merge commit %s to not have content changes: %s", commit.Hash.String(), err)
-				}
-
-				metadata.VerifiedToNotHaveContentChanges = true
 			}
 
 			return nil
@@ -539,6 +526,11 @@ func validateProtectedBranch(reference *plumbing.Reference, branchName string, s
 				return fmt.Errorf("committer and tagger cannot be the same when requireCountersigning is set for commit %s", current.Hash.String())
 			}
 
+			err = verifyConnected(current.ParentHashes[1], current.ParentHashes[0], state)
+			if err != nil {
+				return err
+			}
+
 			if config.requireSHA512 {
 				messageLines := strings.Split(metadata.MergeTag.Message, "\n")
 				prefix := "Gitverify-object-sha512: "
@@ -581,7 +573,7 @@ func validateProtectedBranch(reference *plumbing.Reference, branchName string, s
 		if len(current.ParentHashes) == 2 {
 			_, found := config.maintainerEmails[current.Committer.Email]
 			if !found {
-				if config.forge != nil && current.Committer.Email == config.forge.email {
+				if config.trustedForge != nil && current.Committer.Email == config.trustedForge.email {
 					_, found = config.maintainerEmails[current.Author.Email]
 					if !found {
 						_, found = config.maintainerForgeEmails[current.Author.Email]
@@ -590,27 +582,6 @@ func validateProtectedBranch(reference *plumbing.Reference, branchName string, s
 
 				if !found {
 					return fmt.Errorf("merge commit %s made by %s which is not a maintainer", current.Hash.String(), current.Committer.Email)
-				}
-			}
-
-			metadata := commitMetadata[current.Hash]
-			if !metadata.VerifiedToNotHaveContentChanges {
-				err := verifyMergeCommitNoContentChanges(current)
-				if err != nil {
-					return fmt.Errorf("failed to verify protected merge commit %s to not have content changes: %s", current.Hash.String(), err)
-				}
-
-				metadata.VerifiedToNotHaveContentChanges = true
-			}
-
-			if config.requireUpToDate {
-				mergeBase, err := gitMergeBase(current.ParentHashes[0].String(), current.ParentHashes[1].String())
-				if err != nil {
-					return fmt.Errorf("failed to find merge base for parent commits of %s: %w", current.Hash.String(), err)
-				}
-
-				if mergeBase != current.ParentHashes[0].String() {
-					return fmt.Errorf("second parent of %s is not up to date with first", current.Hash.String())
 				}
 			}
 		}
@@ -626,6 +597,33 @@ func validateProtectedBranch(reference *plumbing.Reference, branchName string, s
 	}
 
 	return nil
+}
+
+func verifyConnected(start plumbing.Hash, target plumbing.Hash, state *gitkit.RepoState) error {
+	if start == target {
+		return fmt.Errorf("start and target must be different, got %s", start.String())
+	}
+
+	queue := []plumbing.Hash{start}
+	for len(queue) > 0 {
+		currentHash := queue[0]
+		queue = queue[1:]
+
+		if currentHash == target {
+			return nil
+		}
+
+		current, found := state.CommitMap[start]
+		if !found {
+			return fmt.Errorf("did not find commit %s", start.String())
+		}
+
+		for _, p := range current.ParentHashes {
+			queue = append(queue, p)
+		}
+	}
+
+	return fmt.Errorf("no path from %s to %s", start, target.String())
 }
 
 func validateTags(repo *git.Repository, state *gitkit.RepoState, repoConfig *RepoConfig, gitHashSHA1 githash.GitHash, gitHashSHA512 githash.GitHash) error {

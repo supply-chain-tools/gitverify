@@ -136,11 +136,12 @@ Generate candidates for `after`
 $ gitverify after-candidates
 ```
 
-| Per repository overrides       | Value                | Required | Description                                 |
-|--------------------------------|----------------------|----------|---------------------------------------------|
-| `repository.identities`        | `identities`         | no       | Override global `identities` section        |
-| `repository.maintainers`       | `maintainers`        | no       | Override global `maintainers` section       |
-| `repository.contributors`      | `contributors`       | no       | Override global `contributors` section      |
-| `repository.rules`             | `rules`              | no       | Override global `rules` section             |
-| `repository.protectedBranches` | `protectedBranches`  | no       | Override global `protectedBranches` section |
+| Per repository overrides       | Value                          | Required | Description                                 |
+|--------------------------------|--------------------------------|----------|---------------------------------------------|
+| `repository.identities`        | `identities`                   | no       | Override global `identities` section        |
+| `repository.maintainers`       | `maintainers`                  | no       | Override global `maintainers` section       |
+| `repository.contributors`      | `contributors`                 | no       | Override global `contributors` section      |
+| `repository.rules`             | `rules`                        | no       | Override global `rules` section             |
+| `repository.protectedBranches` | `protectedBranches`            | no       | Override global `protectedBranches` section |
+| `repository.trustedForge`      | `github.com`, null (default)   | no       | Override global `trustedForge`              |
 

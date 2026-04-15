@@ -60,6 +60,8 @@ type Repository struct {
 	Rules             *Rules     `json:"rules"`
 	ProtectedBranches []string   `json:"protectedBranches"`
 
+	TrustedForge *string `json:"trustedForge"`
+
 	ExemptTags []ExemptTag `json:"exemptTags"`
 }
 
@@ -75,7 +77,6 @@ type After struct {
 }
 
 type ParsedConfig struct {
-	TrustedForge *string
 	Repositories []ParsedRepository
 }
 
@@ -88,6 +89,8 @@ type ParsedRepository struct {
 	Contributors      []string
 	Rules             ParsedRules
 	ProtectedBranches []string
+
+	TrustedForge *string
 
 	ExemptedTags []ExemptTag
 }
@@ -203,6 +206,8 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 			return nil, err
 		}
 
+		trustedForge := combineTrustedForge(config.TrustedForge, repo.TrustedForge)
+
 		parsedRules := ParsedRules{
 			AllowSSHSignatures:     false,
 			RequireSSHUserPresent:  true,
@@ -272,7 +277,7 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 			return nil, fmt.Errorf("requireCountersigning can only be used with requireMergeCommits")
 		}
 
-		if parsedRules.RequireCountersigning == true && config.TrustedForge != nil {
+		if parsedRules.RequireCountersigning == true && trustedForge != nil {
 			return nil, fmt.Errorf("trustedForge cannot be used with requireCountersigning")
 		}
 
@@ -296,12 +301,12 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 			Contributors:      contributors,
 			Rules:             parsedRules,
 			ProtectedBranches: protectedBranches,
+			TrustedForge:      trustedForge,
 			ExemptedTags:      exemptTags,
 		})
 	}
 
 	parsedConfig := ParsedConfig{
-		TrustedForge: config.TrustedForge,
 		Repositories: parsedRepos,
 	}
 
@@ -480,6 +485,14 @@ func combineRules(global *Rules, local *Rules) (*Rules, error) {
 	} else {
 		return nil, fmt.Errorf("no rules specified")
 	}
+}
+
+func combineTrustedForge(global *string, local *string) *string {
+	if local != nil {
+		return local
+	}
+
+	return global
 }
 
 func combineProtectedBranches(global []string, local []string) ([]string, error) {

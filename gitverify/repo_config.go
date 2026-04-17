@@ -114,7 +114,7 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 		}
 
 		var forgeEmail = ""
-		if config.TrustedForge != nil && *config.TrustedForge == gitHubForgeId && i.ForgeUsername != nil && i.ForgeUserId != nil {
+		if repo.TrustedForge != nil && *repo.TrustedForge == gitHubForgeId && i.ForgeUsername != nil && i.ForgeUserId != nil {
 			forgeEmail = gitHubUserEmail(*i.ForgeUserId, *i.ForgeUsername)
 
 			if allForgeEmails.Contains(forgeEmail) {
@@ -154,14 +154,14 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 	}
 
 	var f *forge
-	if config.TrustedForge != nil {
-		if *config.TrustedForge == gitHubForgeId {
+	if repo.TrustedForge != nil {
+		if *repo.TrustedForge == gitHubForgeId {
 			f = &forge{
 				email:        gitHubEmail,
 				gpgPublicKey: gitHubKey,
 			}
 		} else {
-			return nil, fmt.Errorf("unsupported forge: %s", *config.TrustedForge)
+			return nil, fmt.Errorf("unsupported forge: %s", *repo.TrustedForge)
 		}
 	}
 

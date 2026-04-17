@@ -73,13 +73,13 @@ func TestConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if *parsed.TrustedForge != "github.com" {
-		t.Errorf("TrusteForge=%q, want %q", *parsed.TrustedForge, "github.com")
-	}
-
 	repo0 := parsed.Repositories[0]
 	if repo0.Uri != "git+https://github.com/foo/bar.git" {
 		t.Errorf("repo0.Uri=%q, want %q", repo0.Uri, "git+https://github.com/foo/bar.git")
+	}
+
+	if *repo0.TrustedForge != "github.com" {
+		t.Errorf("TrusteForge=%q, want %q", *repo0.TrustedForge, "github.com")
 	}
 
 	if *repo0.After[0].SHA1 != "0000000000000000000000000000000000000000" {

@@ -623,7 +623,7 @@ func verifyConnected(start plumbing.Hash, target plumbing.Hash, state *gitkit.Re
 		}
 	}
 
-	return fmt.Errorf("no path from %s to %s", start, target.String())
+	return fmt.Errorf("no path from %s to %s", start.String(), target.String())
 }
 
 func validateTags(repo *git.Repository, state *gitkit.RepoState, repoConfig *RepoConfig, gitHashSHA1 githash.GitHash, gitHashSHA512 githash.GitHash) error {

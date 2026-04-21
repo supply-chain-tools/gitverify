@@ -711,7 +711,7 @@ func validateTag(tag *plumbing.Reference, state *gitkit.RepoState, repoConfig *R
 					return err
 				}
 			case SignatureTypeNone:
-				if !repoConfig.requireSignedTags {
+				if repoConfig.requireSignedTags {
 					return fmt.Errorf("unsigned annotated tag: %s", t.Name)
 				}
 			default:

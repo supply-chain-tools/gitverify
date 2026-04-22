@@ -69,7 +69,7 @@ func validateSSH(content string, signature string, identity identity, config *Re
 }
 
 func verifySSHSignature(key string, signature string, data string, expectedNamespace string, allowSHA256 bool, requireSHA512 bool) error {
-	publicKey, err := decodeAndParseSSHPublicKey(key)
+	publicKey, _, err := decodeAndParseSSHPublicKey(key)
 	if err != nil {
 		return err
 	}
@@ -87,23 +87,27 @@ func verifySSHSignature(key string, signature string, data string, expectedNames
 	return nil
 }
 
-func decodeAndParseSSHPublicKey(key string) (ssh.PublicKey, error) {
+func decodeAndParseSSHPublicKey(key string) (ssh.PublicKey, []byte, error) {
 	parts := strings.Split(key, " ")
 	if len(parts) < 2 {
-		return nil, fmt.Errorf("invalid SSH public key")
+		return nil, nil, fmt.Errorf("invalid SSH public key")
 	}
 
 	rawKey, err := base64.StdEncoding.DecodeString(parts[1])
 	if err != nil {
-		return nil, fmt.Errorf("failed to decode key: %v", err)
+		return nil, nil, fmt.Errorf("failed to decode key: %v", err)
 	}
 
 	publicKey, err := ssh.ParsePublicKey(rawKey)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse public key: %w", err)
+		return nil, nil, fmt.Errorf("failed to parse public key: %w", err)
 	}
 
-	return publicKey, nil
+	if publicKey.Type() != parts[0] {
+		return nil, nil, fmt.Errorf("inconsistent format for SSH public key '%s'", key)
+	}
+
+	return publicKey, rawKey, nil
 }
 
 func decodeAndParseSSHSignature(signature string) (*SSHSig, error) {
@@ -180,6 +184,39 @@ func verifySignature(maintainerAllowedKey ssh.PublicKey, message string, signatu
 	err := ssh.Unmarshal([]byte(signature.Signature), sig)
 	if err != nil {
 		return err
+	}
+
+	switch sig.Format {
+	case sshFormatSkEd25519:
+		if maintainerAllowedKey.Type() != sshFormatSkEd25519 {
+			return fmt.Errorf("signature format does not match key type")
+		}
+	case sshFormatSkECDSA:
+		if maintainerAllowedKey.Type() != sshFormatSkECDSA {
+			return fmt.Errorf("signature format does not match key type")
+		}
+	case sshFormatEd25519:
+		if maintainerAllowedKey.Type() != sshFormatEd25519 {
+			return fmt.Errorf("signature format does not match key type")
+		}
+	case sshFormatECDSASHA2:
+		if maintainerAllowedKey.Type() != sshFormatECDSASHA2 {
+			return fmt.Errorf("signature format does not match key type")
+		}
+	case sshFormatSHA512:
+		if maintainerAllowedKey.Type() != "ssh-rsa" {
+			return fmt.Errorf("signature format does not match key type")
+		}
+	case sshFormatSHA256:
+		if maintainerAllowedKey.Type() != "ssh-rsa" {
+			return fmt.Errorf("signature format does not match key type")
+		}
+
+		if !allowSHA256 {
+			return fmt.Errorf("signature format 'rsa-sha2-256' not allowed")
+		}
+	default:
+		return fmt.Errorf("unsupported signature format: %s", sig.Format)
 	}
 
 	err = maintainerAllowedKey.Verify(signedBlob, sig)

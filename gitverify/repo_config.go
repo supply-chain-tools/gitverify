@@ -1,11 +1,9 @@
 package gitverify
 
 import (
-	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"regexp"
-	"strings"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/supply-chain-tools/go-sandbox/hashset"
@@ -88,17 +86,7 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 	for _, i := range repo.Identities {
 		sshPublicKeys := make(map[string]*ssh.PublicKey)
 		for _, sshPublicKey := range i.SSHPublicKeys {
-			parts := strings.Split(sshPublicKey, " ")
-			if len(parts) < 2 {
-				return nil, fmt.Errorf("invalid SSH public key '%s'", sshPublicKey)
-			}
-
-			rawKey, err := base64.StdEncoding.DecodeString(parts[1])
-			if err != nil {
-				return nil, err
-			}
-
-			publicKey, err := ssh.ParsePublicKey(rawKey)
+			publicKey, rawKey, err := decodeAndParseSSHPublicKey(sshPublicKey)
 			if err != nil {
 				return nil, err
 			}

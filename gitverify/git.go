@@ -15,13 +15,16 @@ import (
 type SignatureType string
 
 const (
-	SignatureTypeGPG     SignatureType = "gpg"
-	SignatureTypeSSH     SignatureType = "ssh"
-	SignatureTypeNone    SignatureType = "none"
-	SignatureTypeSMime   SignatureType = "smime"
-	SignatureTypeUnknown SignatureType = "unknown"
-	namespaceSSH         string        = "git"
+	SignatureTypeGPG         SignatureType = "gpg"
+	SignatureTypeSSH         SignatureType = "ssh"
+	SignatureTypeNone        SignatureType = "none"
+	SignatureTypeSMime       SignatureType = "smime"
+	SignatureTypeUnknown     SignatureType = "unknown"
+	sshExpectedNamespace     string        = "git"
+	sshExpectedReservedField string        = ""
 )
+
+var sshExpectedMagicPreamble = []byte("SSHSIG")
 
 type CommitData struct {
 	SignatureType     SignatureType

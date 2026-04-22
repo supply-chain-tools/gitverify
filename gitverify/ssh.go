@@ -1,6 +1,7 @@
 package gitverify
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"crypto/sha512"
 	"encoding/base64"
@@ -32,7 +33,7 @@ func validateSSH(content string, signature string, identity identity, config *Re
 
 	trustedKey, found := identity.sshPublicKeys[sshSig.PublicKey]
 	if found {
-		err = verifySignature(*trustedKey, content, sshSig, namespaceSSH, config.allowSSHSHA256, config.requireSHA512)
+		err = verifySignature(*trustedKey, content, sshSig, sshExpectedNamespace, config.allowSSHSHA256, config.requireSHA512)
 		if err != nil {
 			return err
 		}
@@ -67,7 +68,7 @@ func validateSSH(content string, signature string, identity identity, config *Re
 	return nil
 }
 
-func verifySSHSignature(key string, signature string, data string, namespace string, allowSHA256 bool, requireSHA512 bool) error {
+func verifySSHSignature(key string, signature string, data string, expectedNamespace string, allowSHA256 bool, requireSHA512 bool) error {
 	publicKey, err := decodeAndParseSSHPublicKey(key)
 	if err != nil {
 		return err
@@ -78,7 +79,7 @@ func verifySSHSignature(key string, signature string, data string, namespace str
 		return err
 	}
 
-	err = verifySignature(publicKey, data, sshSig, namespace, allowSHA256, requireSHA512)
+	err = verifySignature(publicKey, data, sshSig, expectedNamespace, allowSHA256, requireSHA512)
 	if err != nil {
 		return err
 	}
@@ -125,8 +126,22 @@ func decodeAndParseSSHSignature(signature string) (*SSHSig, error) {
 	return sshSig, nil
 }
 
-func verifySignature(maintainerAllowedKey ssh.PublicKey, message string, signature *SSHSig, namespace string, allowSHA256 bool, requireSHA512 bool) error {
-	var h []byte
+func verifySignature(maintainerAllowedKey ssh.PublicKey, message string, signature *SSHSig, expectedNamespace string, allowSHA256 bool, requireSHA512 bool) error {
+	if !bytes.Equal(signature.MagicPreamble[:], sshExpectedMagicPreamble) {
+		return fmt.Errorf("incorrect SSH magic preamble")
+	}
+
+	if signature.SigVersion != 1 {
+		return fmt.Errorf("unsupported SSH signature version %d", signature.SigVersion)
+	}
+
+	if signature.Namespace != expectedNamespace {
+		return fmt.Errorf("unsupported SSH namespace, expected '%s', got '%s'", expectedNamespace, signature.Namespace)
+	}
+
+	if signature.Reserved != sshExpectedReservedField {
+		return fmt.Errorf("non-empty reserved SSH field")
+	}
 
 	if allowSHA256 && requireSHA512 {
 		return fmt.Errorf("invalid arguments: allowSHA256 and requireSHA512 cannot both be true")
@@ -136,6 +151,7 @@ func verifySignature(maintainerAllowedKey ssh.PublicKey, message string, signatu
 		return fmt.Errorf("SHA-512 required for SSH, got: %s", signature.HashAlgorithm)
 	}
 
+	var h []byte
 	switch signature.HashAlgorithm {
 	case "sha256":
 		if !allowSHA256 {
@@ -151,14 +167,14 @@ func verifySignature(maintainerAllowedKey ssh.PublicKey, message string, signatu
 	}
 
 	sshSig := SshSig{
-		Namespace:     namespace,
-		Reserved:      "",
+		Namespace:     expectedNamespace,
+		Reserved:      sshExpectedReservedField,
 		HashAlgorithm: signature.HashAlgorithm,
 		Hash:          string(h),
 	}
 
 	signedBlob := ssh.Marshal(sshSig)
-	signedBlob = append([]byte("SSHSIG"), signedBlob...)
+	signedBlob = append(sshExpectedMagicPreamble, signedBlob...)
 
 	sig := &ssh.Signature{}
 	err := ssh.Unmarshal([]byte(signature.Signature), sig)

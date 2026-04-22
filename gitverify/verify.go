@@ -87,10 +87,6 @@ func validateCommit(commit *object.Commit, commitMetadata map[plumbing.Hash]*Com
 				return err
 			}
 
-			if repoConfig.trustedForge == nil {
-				return fmt.Errorf("forge is not allowed to make commits: %s", commit.Hash.String())
-			}
-
 			_, found := repoConfig.maintainerOrContributorEmails[commit.Author.Email]
 			if !found {
 				_, found := repoConfig.maintainerOrContributorForgeEmails[commit.Author.Email]

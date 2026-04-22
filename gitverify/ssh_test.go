@@ -60,3 +60,33 @@ func TestSSSH(t *testing.T) {
 		t.Errorf("Verification succeeded for %s: expected failure", sha256TestCase.Name)
 	}
 }
+
+func TestTooShort(t *testing.T) {
+	data := "foo"
+	namespace := "file"
+
+	type TestCase struct {
+		Name      string
+		Key       string
+		Signature string
+	}
+
+	testCases := []TestCase{
+		{
+			Name:      "too short",
+			Key:       "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIAQv90+kSOSKZYlMoWO0eX6QZ1Nt5n2BviA4vFx3lgK",
+			Signature: "-----BEGIN SSH SIGNATURE-----\n-----END SSH SIGNATURE-----\n",
+		},
+	}
+
+	for _, testCase := range testCases {
+		err := verifySSHSignature(testCase.Key, testCase.Signature, data, namespace, true, false)
+		if err == nil {
+			t.Errorf("Verification should have failed %s:", testCase.Name)
+		} else {
+			if err.Error() != "failed to unwrap signature: signature is too short" {
+				t.Errorf("Verification should have failed %s:", testCase.Name)
+			}
+		}
+	}
+}

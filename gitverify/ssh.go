@@ -88,6 +88,10 @@ func verifySSHSignature(key string, signature string, data string, namespace str
 
 func decodeAndParseSSHPublicKey(key string) (ssh.PublicKey, error) {
 	parts := strings.Split(key, " ")
+	if len(parts) < 2 {
+		return nil, fmt.Errorf("invalid SSH public key")
+	}
+
 	rawKey, err := base64.StdEncoding.DecodeString(parts[1])
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode key: %v", err)
@@ -125,7 +129,7 @@ func verifySignature(maintainerAllowedKey ssh.PublicKey, message string, signatu
 	var h []byte
 
 	if allowSHA256 && requireSHA512 {
-		return fmt.Errorf("invalid arguments: allowSHA256 and requireSHA512 cannot both the true")
+		return fmt.Errorf("invalid arguments: allowSHA256 and requireSHA512 cannot both be true")
 	}
 
 	if requireSHA512 && signature.HashAlgorithm != "sha512" {
@@ -184,7 +188,13 @@ func unwrapSshSignature(signature string) (string, error) {
 		return "", fmt.Errorf("signature does not end with footer")
 	}
 
-	subset := signature[len(header) : len(signature)-len(footer)-1]
+	subsetStart := len(header)
+	subsetEnd := len(signature) - len(footer) - 1
+	if subsetEnd < subsetStart {
+		return "", fmt.Errorf("signature is too short")
+	}
+
+	subset := signature[subsetStart:subsetEnd]
 	result := strings.ReplaceAll(subset, "\n", "")
 	return result, nil
 }

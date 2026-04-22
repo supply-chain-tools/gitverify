@@ -2,6 +2,7 @@ package gitverify
 
 import (
 	"fmt"
+
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/supply-chain-tools/go-sandbox/hashset"
 )
@@ -46,7 +47,7 @@ func validateIdentityGPGTag(tag *object.Tag, id identity, config *RepoConfig) er
 	}
 
 	if len(id.gpgPublicKeys) < 1 {
-		return fmt.Errorf("GPG public key not found for commit %s", tag.Name)
+		return fmt.Errorf("GPG public key not found for tag %s", tag.Name)
 	}
 
 	if len(id.gpgPublicKeys) > 1 {
@@ -64,6 +65,10 @@ func validateGPGTag(tag *object.Tag, key string) error {
 
 	entityEmails := hashset.New[string]()
 	for _, identity := range entity.Identities {
+		if identity.UserId == nil {
+			return fmt.Errorf("missing user id for tag %s", tag.Name)
+		}
+
 		entityEmails.Add(identity.UserId.Email)
 	}
 

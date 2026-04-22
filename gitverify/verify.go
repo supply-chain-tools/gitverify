@@ -611,7 +611,7 @@ func verifyConnected(start plumbing.Hash, target plumbing.Hash, state *gitkit.Re
 
 		current, found := state.CommitMap[currentHash]
 		if !found {
-			return fmt.Errorf("did not find commit %s", start.String())
+			return fmt.Errorf("did not find commit %s", currentHash.String())
 		}
 
 		for _, p := range current.ParentHashes {

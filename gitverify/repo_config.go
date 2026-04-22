@@ -20,10 +20,8 @@ type RepoConfig struct {
 	sha512ToBranch                     map[[64]byte]string
 	afterSHA1ToSHA512                  map[plumbing.Hash][64]byte
 	maintainerEmails                   map[string]identity
-	contributorEmails                  map[string]identity
 	maintainerOrContributorEmails      map[string]identity
 	maintainerForgeEmails              map[string]identity
-	contributorForgeEmails             map[string]identity
 	maintainerOrContributorForgeEmails map[string]identity
 	trustedForge                       *forge
 	allowSSHSignatures                 bool
@@ -91,6 +89,10 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 		sshPublicKeys := make(map[string]*ssh.PublicKey)
 		for _, sshPublicKey := range i.SSHPublicKeys {
 			parts := strings.Split(sshPublicKey, " ")
+			if len(parts) < 2 {
+				return nil, fmt.Errorf("invalid SSH public key '%s'", sshPublicKey)
+			}
+
 			rawKey, err := base64.StdEncoding.DecodeString(parts[1])
 			if err != nil {
 				return nil, err
@@ -201,7 +203,7 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 			}
 
 			if !match {
-				return nil, fmt.Errorf("hash.sha512 for exempted tag must be 64 character hex, got %s", *exemptTag.Hash.SHA512)
+				return nil, fmt.Errorf("hash.sha512 for exempted tag must be 128 character hex, got %s", *exemptTag.Hash.SHA512)
 			}
 
 			exemptedTagSHA512Map[exemptTag.Ref] = *exemptTag.Hash.SHA512
@@ -264,10 +266,8 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 		sha512ToBranch:                     sha512ToBranch,
 		afterSHA1ToSHA512:                  afterSHA1ToSHA512,
 		maintainerEmails:                   maintainerEmails,
-		contributorEmails:                  contributorEmails,
 		maintainerOrContributorEmails:      maintainerOrContributor,
 		maintainerForgeEmails:              maintainerForgeEmails,
-		contributorForgeEmails:             contributorForgeEmails,
 		maintainerOrContributorForgeEmails: maintainerOrContributorForgeEmails,
 		trustedForge:                       f,
 		allowSSHSignatures:                 repo.Rules.AllowSSHSignatures,

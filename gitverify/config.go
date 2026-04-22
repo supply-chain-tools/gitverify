@@ -14,6 +14,9 @@ import (
 	"github.com/supply-chain-tools/go-sandbox/hashset"
 )
 
+// TODO improve
+const tagRefRegex = "^refs/tags/.+$"
+
 type Config struct {
 	Type              string     `json:"_type"`
 	Identities        []Identity `json:"identities"`
@@ -43,7 +46,7 @@ type Rules struct {
 
 	AllowGPGSignatures *bool `json:"allowGpgSignatures"`
 
-	RequireSignedTags     *bool `json:"RequireSignedTags"`
+	RequireSignedTags     *bool `json:"requireSignedTags"`
 	RequireMergeCommits   *bool `json:"requireMergeCommits"`
 	RequireCountersigning *bool `json:"requireCountersigning"`
 
@@ -173,6 +176,7 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 		return nil, fmt.Errorf("got schema version %s, expected %s", version, expectedVersion)
 	}
 
+	allURIs := hashset.New[string]()
 	parsedRepos := make([]ParsedRepository, 0)
 
 	for _, repo := range config.Repositories {
@@ -293,6 +297,11 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 			return nil, fmt.Errorf("requireSha512 does not currently support allowGpgSignatures")
 		}
 
+		if allURIs.Contains(uri) {
+			return nil, fmt.Errorf("duplicate URI '%s'", uri)
+		}
+		allURIs.Add(uri)
+
 		parsedRepos = append(parsedRepos, ParsedRepository{
 			Uri:               uri,
 			After:             after,
@@ -359,6 +368,7 @@ func validateUri(uri string) (string, error) {
 }
 
 func validateAfter(after []After, requireSHA512 bool) ([]After, error) {
+	// TODO consider verifying after to be globally unique
 	allBranches := hashset.New[string]()
 	allSHA1 := hashset.New[string]()
 	allSHA512 := hashset.New[string]()
@@ -381,6 +391,8 @@ func validateAfter(after []After, requireSHA512 bool) ([]After, error) {
 			if allSHA1.Contains(*a.SHA1) {
 				return nil, fmt.Errorf("after SHA1 '%s' must be unique", *a.SHA1)
 			}
+
+			allSHA1.Add(*a.SHA1)
 		}
 
 		if requireSHA512 && a.SHA512 == nil {
@@ -400,6 +412,8 @@ func validateAfter(after []After, requireSHA512 bool) ([]After, error) {
 			if allSHA512.Contains(*a.SHA512) {
 				return nil, fmt.Errorf("after.sha512 '%s' must be unique", *a.SHA512)
 			}
+
+			allSHA512.Add(*a.SHA512)
 		}
 
 		if a.Branch != nil {
@@ -414,7 +428,18 @@ func validateAfter(after []After, requireSHA512 bool) ([]After, error) {
 }
 
 func validateExemptTags(exemptTags []ExemptTag, requireSHA512 bool) ([]ExemptTag, error) {
+	allTagRefs := hashset.New[string]()
+
 	for _, exemptTag := range exemptTags {
+		match, err := regexp.MatchString(tagRefRegex, exemptTag.Ref)
+		if err != nil {
+			return nil, err
+		}
+
+		if !match {
+			return nil, fmt.Errorf("invalid exemptTag.ref '%s'", exemptTag.Ref)
+		}
+
 		if exemptTag.Hash.SHA1 == nil && exemptTag.Hash.SHA512 == nil {
 			return nil, fmt.Errorf("either exemptTag.hash.sha1 or exemptTag.hash.sha512 must be set, or both")
 		}
@@ -444,6 +469,11 @@ func validateExemptTags(exemptTags []ExemptTag, requireSHA512 bool) ([]ExemptTag
 				return nil, fmt.Errorf("exemptTag.hash.sha512 '%s' must be a 128 character hex", *exemptTag.Hash.SHA512)
 			}
 		}
+
+		if allTagRefs.Contains(exemptTag.Ref) {
+			return nil, fmt.Errorf("duplicate exemptTag.ref '%s'", exemptTag.Ref)
+		}
+		allTagRefs.Add(exemptTag.Ref)
 	}
 
 	return exemptTags, nil

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"regexp"
 	"strings"
 
@@ -106,8 +107,11 @@ func validateCommit(commit *object.Commit, commitMetadata map[plumbing.Hash]*Com
 
 	switch metadata.SignatureType {
 	case SignatureTypeSSH:
-		content := buildContent(commit)
-		err := validateSSH(content, commit.PGPSignature, id, repoConfig)
+		content, err := buildContent(commit)
+		if err != nil {
+			return err
+		}
+		err = validateSSH(content, commit.PGPSignature, id, repoConfig)
 		if err != nil {
 			return fmt.Errorf("failed to validate commit %s: %w", commit.Hash.String(), err)
 		}
@@ -861,31 +865,24 @@ func computeCommitMetadata(state *gitkit.RepoState, repoConfig *RepoConfig, gitH
 	return commitMap, nil
 }
 
-func buildContent(commit *object.Commit) string {
-	sb := strings.Builder{}
-	sb.WriteString("tree " + commit.TreeHash.String() + "\n")
-
-	for _, parent := range commit.ParentHashes {
-		sb.WriteString("parent " + parent.String() + "\n")
+func buildContent(commit *object.Commit) (string, error) {
+	memoryObject := &plumbing.MemoryObject{}
+	err := commit.EncodeWithoutSignature(memoryObject)
+	if err != nil {
+		return "", err
 	}
 
-	// TODO verify for UTC
-	sb.WriteString(fmt.Sprintf("author %s <%s> %d %s\n", commit.Author.Name, commit.Author.Email, commit.Author.When.Unix(), commit.Author.When.Format("-0700")))
-	sb.WriteString(fmt.Sprintf("committer %s <%s> %d %s\n", commit.Committer.Name, commit.Committer.Email, commit.Committer.When.Unix(), commit.Committer.When.Format("-0700")))
-
-	if commit.MergeTag != "" {
-		parts := strings.Split(commit.MergeTag, "\n")
-
-		sb.WriteString("mergetag")
-		for i := 0; i < len(parts)-1; i++ {
-			sb.WriteString(" ")
-			sb.WriteString(parts[i])
-			sb.WriteString("\n")
-		}
+	reader, err := memoryObject.Reader()
+	if err != nil {
+		return "", err
 	}
-	sb.WriteString("\n")
-	sb.WriteString(commit.Message)
-	return sb.String()
+
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return "", err
+	}
+
+	return string(data), nil
 }
 
 func isProtected(reference *plumbing.Reference, config *RepoConfig) (bool, string) {

@@ -730,17 +730,27 @@ func validateTag(tag *plumbing.Reference, state *gitkit.RepoState, repoConfig *R
 }
 
 func tagContent(tag *object.Tag) (string, error) {
-	sb := strings.Builder{}
+	if tag.TargetType != plumbing.CommitObject {
+		return "", fmt.Errorf("only commit tags are supported, got '%s' for tag '%s'", tag.Type(), tag.Name)
+	}
 
-	sb.WriteString("object " + tag.Target.String() + "\n")
-	sb.WriteString("type commit\n")
-	sb.WriteString("tag " + tag.Name + "\n")
-	sb.WriteString(fmt.Sprintf("tagger %s <%s> %d %s\n", tag.Tagger.Name, tag.Tagger.Email, tag.Tagger.When.Unix(), tag.Tagger.When.Format("-0700")))
+	memoryObject := &plumbing.MemoryObject{}
+	err := tag.EncodeWithoutSignature(memoryObject)
+	if err != nil {
+		return "", err
+	}
 
-	sb.WriteString("\n")
-	sb.WriteString(tag.Message)
+	reader, err := memoryObject.Reader()
+	if err != nil {
+		return "", err
+	}
 
-	return sb.String(), nil
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return "", err
+	}
+
+	return string(data), nil
 }
 
 func computeCommitMetadata(state *gitkit.RepoState, repoConfig *RepoConfig, gitHashSHA1 githash.GitHash, gitHashSHA512 githash.GitHash) (map[plumbing.Hash]*CommitData, error) {

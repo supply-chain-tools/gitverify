@@ -107,6 +107,10 @@ func decodeAndParseSSHPublicKey(key string) (ssh.PublicKey, []byte, error) {
 		return nil, nil, fmt.Errorf("inconsistent format for SSH public key '%s'", key)
 	}
 
+	if !isSupportedKeyFormat(publicKey.Type()) {
+		return nil, nil, fmt.Errorf("unsupported key format '%s'", publicKey.Type())
+	}
+
 	return publicKey, rawKey, nil
 }
 
@@ -186,37 +190,8 @@ func verifySignature(maintainerAllowedKey ssh.PublicKey, message string, signatu
 		return err
 	}
 
-	switch sig.Format {
-	case sshFormatSkEd25519:
-		if maintainerAllowedKey.Type() != sshFormatSkEd25519 {
-			return fmt.Errorf("signature format does not match key type")
-		}
-	case sshFormatSkECDSA:
-		if maintainerAllowedKey.Type() != sshFormatSkECDSA {
-			return fmt.Errorf("signature format does not match key type")
-		}
-	case sshFormatEd25519:
-		if maintainerAllowedKey.Type() != sshFormatEd25519 {
-			return fmt.Errorf("signature format does not match key type")
-		}
-	case sshFormatECDSASHA2:
-		if maintainerAllowedKey.Type() != sshFormatECDSASHA2 {
-			return fmt.Errorf("signature format does not match key type")
-		}
-	case sshFormatSHA512:
-		if maintainerAllowedKey.Type() != "ssh-rsa" {
-			return fmt.Errorf("signature format does not match key type")
-		}
-	case sshFormatSHA256:
-		if maintainerAllowedKey.Type() != "ssh-rsa" {
-			return fmt.Errorf("signature format does not match key type")
-		}
-
-		if !allowSHA256 {
-			return fmt.Errorf("signature format 'rsa-sha2-256' not allowed")
-		}
-	default:
-		return fmt.Errorf("unsupported signature format: %s", sig.Format)
+	if !isSupportedSignatureFormat(sig.Format) {
+		return fmt.Errorf("unsupported signature format '%s'", sig.Format)
 	}
 
 	err = maintainerAllowedKey.Verify(signedBlob, sig)
@@ -225,6 +200,58 @@ func verifySignature(maintainerAllowedKey ssh.PublicKey, message string, signatu
 	}
 
 	return nil
+}
+
+func isSupportedSignatureFormat(format string) bool {
+	switch format {
+	case ssh.KeyAlgoSKED25519:
+		// USES SHA-256 internally
+		return true
+	case ssh.KeyAlgoSKECDSA256:
+		// USES SHA-256 internally
+		return true
+	case ssh.KeyAlgoED25519:
+		// USES SHA-512 internally
+		return true
+	case ssh.KeyAlgoECDSA256:
+		// USES SHA-256 internally
+		return true
+	case ssh.KeyAlgoECDSA384:
+		// USES SHA-384 internally
+		return true
+	case ssh.KeyAlgoECDSA521:
+		// USES SHA-512 internally
+		return true
+	case ssh.KeyAlgoRSASHA512:
+		// USES SHA-512 internally
+		return true
+	case ssh.KeyAlgoRSASHA256:
+		// USES SHA-256 internally
+		return true
+	default:
+		return false
+	}
+}
+
+func isSupportedKeyFormat(format string) bool {
+	switch format {
+	case ssh.KeyAlgoSKED25519:
+		return true
+	case ssh.KeyAlgoSKECDSA256:
+		return true
+	case ssh.KeyAlgoED25519:
+		return true
+	case ssh.KeyAlgoECDSA256:
+		return true
+	case ssh.KeyAlgoECDSA384:
+		return true
+	case ssh.KeyAlgoECDSA521:
+		return true
+	case "ssh-rsa":
+		return true
+	default:
+		return false
+	}
 }
 
 func unwrapSshSignature(signature string) (string, error) {

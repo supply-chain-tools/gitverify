@@ -22,12 +22,6 @@ const (
 	SignatureTypeUnknown     SignatureType = "unknown"
 	sshExpectedNamespace     string        = "git"
 	sshExpectedReservedField string        = ""
-	sshFormatSkEd25519                     = "sk-ssh-ed25519@openssh.com"
-	sshFormatSkECDSA                       = "sk-ecdsa-sha2-nistp256@openssh.com"
-	sshFormatEd25519                       = "ssh-ed25519"
-	sshFormatECDSASHA2                     = "ecdsa-sha2-nistp256"
-	sshFormatSHA512                        = "rsa-sha2-512"
-	sshFormatSHA256                        = "rsa-sha2-256"
 )
 
 var sshExpectedMagicPreamble = []byte("SSHSIG")

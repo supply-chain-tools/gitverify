@@ -645,6 +645,33 @@ func validateTags(repo *git.Repository, state *gitkit.RepoState, repoConfig *Rep
 func validateTag(tag *plumbing.Reference, state *gitkit.RepoState, repoConfig *RepoConfig, gitHashSHA1 githash.GitHash, gitHashSHA512 githash.GitHash) error {
 	isExempted := false
 
+	t, isAnnotatedTag := state.TagMap[tag.Hash()]
+	if isAnnotatedTag {
+		if t.Hash != tag.Hash() {
+			return fmt.Errorf("inconsistent hash for tag %s", tag.Hash().String())
+		}
+
+		hash := t.Hash
+		verifiedHash, err := gitHashSHA1.TagSum(hash)
+		if err != nil {
+			return err
+		}
+
+		if !bytes.Equal(verifiedHash, hash[:]) {
+			return fmt.Errorf("failed to verify hash for annotated tag %s", tag.Hash().String())
+		}
+	} else {
+		hash := tag.Hash()
+		verifiedHash, err := gitHashSHA1.CommitSum(tag.Hash())
+		if err != nil {
+			return err
+		}
+
+		if !bytes.Equal(verifiedHash, hash[:]) {
+			return fmt.Errorf("failed to verify hash for light weight tag %s", tag.Hash().String())
+		}
+	}
+
 	tagHash, found := repoConfig.exemptedTags[tag.Name().String()]
 	if found {
 		if tagHash != tag.Hash().String() {
@@ -652,8 +679,6 @@ func validateTag(tag *plumbing.Reference, state *gitkit.RepoState, repoConfig *R
 		}
 		isExempted = true
 	}
-
-	t, isAnnotatedTag := state.TagMap[tag.Hash()]
 
 	tagHashSHA512, found := repoConfig.exemptedTagsSHA512[tag.Name().String()]
 	if found {

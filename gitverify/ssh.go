@@ -190,8 +190,13 @@ func verifySignature(maintainerAllowedKey ssh.PublicKey, message string, signatu
 		return err
 	}
 
-	if !isSupportedSignatureFormat(sig.Format) {
-		return fmt.Errorf("unsupported signature format '%s'", sig.Format)
+	expectedKeyType, err := keyTypeFromSignatureFormat(sig.Format)
+	if err != nil {
+		return err
+	}
+
+	if expectedKeyType != maintainerAllowedKey.Type() {
+		return fmt.Errorf("signature format '%s' does not match key type '%s'", sig.Format, maintainerAllowedKey.Type())
 	}
 
 	err = maintainerAllowedKey.Verify(signedBlob, sig)
@@ -202,34 +207,34 @@ func verifySignature(maintainerAllowedKey ssh.PublicKey, message string, signatu
 	return nil
 }
 
-func isSupportedSignatureFormat(format string) bool {
+func keyTypeFromSignatureFormat(format string) (string, error) {
 	switch format {
 	case ssh.KeyAlgoSKED25519:
 		// USES SHA-256 internally
-		return true
+		return format, nil
 	case ssh.KeyAlgoSKECDSA256:
 		// USES SHA-256 internally
-		return true
+		return format, nil
 	case ssh.KeyAlgoED25519:
 		// USES SHA-512 internally
-		return true
+		return format, nil
 	case ssh.KeyAlgoECDSA256:
 		// USES SHA-256 internally
-		return true
+		return format, nil
 	case ssh.KeyAlgoECDSA384:
 		// USES SHA-384 internally
-		return true
+		return format, nil
 	case ssh.KeyAlgoECDSA521:
 		// USES SHA-512 internally
-		return true
+		return format, nil
 	case ssh.KeyAlgoRSASHA512:
 		// USES SHA-512 internally
-		return true
+		return "ssh-rsa", nil
 	case ssh.KeyAlgoRSASHA256:
 		// USES SHA-256 internally
-		return true
+		return "ssh-rsa", nil
 	default:
-		return false
+		return "", fmt.Errorf("unsupported key format '%s'", format)
 	}
 }
 

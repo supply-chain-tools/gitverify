@@ -1,18 +1,20 @@
 package gitverify
 
 import (
+	"bytes"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/supply-chain-tools/go-sandbox/githash"
 	"github.com/supply-chain-tools/go-sandbox/gitkit"
 	"github.com/supply-chain-tools/go-sandbox/hashset"
-	"os"
-	"path/filepath"
 )
 
 type LocalState struct {
@@ -75,7 +77,10 @@ func VerifyLocalState(repo *git.Repository, state *gitkit.RepoState, repoConfig 
 	}
 
 	localState := LocalState{}
-	err = json.Unmarshal(data, &localState)
+
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	err = dec.Decode(&localState)
 	if err != nil {
 		return err
 	}

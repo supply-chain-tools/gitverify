@@ -2,6 +2,7 @@ package gitverify
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/supply-chain-tools/go-sandbox/hashset"
@@ -31,7 +32,13 @@ func validateGPGCommit(commit *object.Commit, key string) error {
 
 	entityEmails := hashset.New[string]()
 	for _, identity := range entity.Identities {
-		entityEmails.Add(identity.UserId.Email)
+		if identity.UserId == nil {
+			return fmt.Errorf("missing user id for commit %s", commit.Hash.String())
+		}
+
+		if !identity.Revoked(time.Now()) {
+			entityEmails.Add(identity.UserId.Email)
+		}
 	}
 
 	if !entityEmails.Contains(commit.Committer.Email) {
@@ -60,7 +67,7 @@ func validateIdentityGPGTag(tag *object.Tag, id identity, config *RepoConfig) er
 func validateGPGTag(tag *object.Tag, key string) error {
 	entity, err := tag.Verify(key)
 	if err != nil {
-		return fmt.Errorf("failed to verify tag %s: %w", tag.Hash.String(), err)
+		return fmt.Errorf("failed to verify tag %s: %w", tag.Name, err)
 	}
 
 	entityEmails := hashset.New[string]()
@@ -69,7 +76,9 @@ func validateGPGTag(tag *object.Tag, key string) error {
 			return fmt.Errorf("missing user id for tag %s", tag.Name)
 		}
 
-		entityEmails.Add(identity.UserId.Email)
+		if !identity.Revoked(time.Now()) {
+			entityEmails.Add(identity.UserId.Email)
+		}
 	}
 
 	if !entityEmails.Contains(tag.Tagger.Email) {

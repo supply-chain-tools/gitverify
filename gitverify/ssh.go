@@ -69,7 +69,7 @@ func validateSSH(content string, signature string, identity identity, config *Re
 }
 
 func verifySSHSignature(key string, signature string, data string, expectedNamespace string, allowSHA256 bool, requireSHA512 bool) error {
-	publicKey, err := decodeAndParseSSHPublicKey(key)
+	publicKey, _, err := decodeAndParseSSHPublicKey(key)
 	if err != nil {
 		return err
 	}
@@ -87,23 +87,31 @@ func verifySSHSignature(key string, signature string, data string, expectedNames
 	return nil
 }
 
-func decodeAndParseSSHPublicKey(key string) (ssh.PublicKey, error) {
+func decodeAndParseSSHPublicKey(key string) (ssh.PublicKey, []byte, error) {
 	parts := strings.Split(key, " ")
 	if len(parts) < 2 {
-		return nil, fmt.Errorf("invalid SSH public key")
+		return nil, nil, fmt.Errorf("invalid SSH public key")
 	}
 
 	rawKey, err := base64.StdEncoding.DecodeString(parts[1])
 	if err != nil {
-		return nil, fmt.Errorf("failed to decode key: %v", err)
+		return nil, nil, fmt.Errorf("failed to decode key: %v", err)
 	}
 
 	publicKey, err := ssh.ParsePublicKey(rawKey)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse public key: %w", err)
+		return nil, nil, fmt.Errorf("failed to parse public key: %w", err)
 	}
 
-	return publicKey, nil
+	if publicKey.Type() != parts[0] {
+		return nil, nil, fmt.Errorf("inconsistent format for SSH public key '%s'", key)
+	}
+
+	if !isSupportedKeyFormat(publicKey.Type()) {
+		return nil, nil, fmt.Errorf("unsupported key format '%s'", publicKey.Type())
+	}
+
+	return publicKey, rawKey, nil
 }
 
 func decodeAndParseSSHSignature(signature string) (*SSHSig, error) {
@@ -182,12 +190,73 @@ func verifySignature(maintainerAllowedKey ssh.PublicKey, message string, signatu
 		return err
 	}
 
+	expectedKeyType, err := keyTypeFromSignatureFormat(sig.Format)
+	if err != nil {
+		return err
+	}
+
+	if expectedKeyType != maintainerAllowedKey.Type() {
+		return fmt.Errorf("signature format '%s' does not match key type '%s'", sig.Format, maintainerAllowedKey.Type())
+	}
+
 	err = maintainerAllowedKey.Verify(signedBlob, sig)
 	if err != nil {
 		return err
 	}
 
 	return nil
+}
+
+func keyTypeFromSignatureFormat(format string) (string, error) {
+	switch format {
+	case ssh.KeyAlgoSKED25519:
+		// USES SHA-256 internally
+		return format, nil
+	case ssh.KeyAlgoSKECDSA256:
+		// USES SHA-256 internally
+		return format, nil
+	case ssh.KeyAlgoED25519:
+		// USES SHA-512 internally
+		return format, nil
+	case ssh.KeyAlgoECDSA256:
+		// USES SHA-256 internally
+		return format, nil
+	case ssh.KeyAlgoECDSA384:
+		// USES SHA-384 internally
+		return format, nil
+	case ssh.KeyAlgoECDSA521:
+		// USES SHA-512 internally
+		return format, nil
+	case ssh.KeyAlgoRSASHA512:
+		// USES SHA-512 internally
+		return "ssh-rsa", nil
+	case ssh.KeyAlgoRSASHA256:
+		// USES SHA-256 internally
+		return "ssh-rsa", nil
+	default:
+		return "", fmt.Errorf("unsupported key format '%s'", format)
+	}
+}
+
+func isSupportedKeyFormat(format string) bool {
+	switch format {
+	case ssh.KeyAlgoSKED25519:
+		return true
+	case ssh.KeyAlgoSKECDSA256:
+		return true
+	case ssh.KeyAlgoED25519:
+		return true
+	case ssh.KeyAlgoECDSA256:
+		return true
+	case ssh.KeyAlgoECDSA384:
+		return true
+	case ssh.KeyAlgoECDSA521:
+		return true
+	case "ssh-rsa":
+		return true
+	default:
+		return false
+	}
 }
 
 func unwrapSshSignature(signature string) (string, error) {

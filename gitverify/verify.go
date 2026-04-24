@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"regexp"
 	"strings"
 
@@ -106,8 +107,11 @@ func validateCommit(commit *object.Commit, commitMetadata map[plumbing.Hash]*Com
 
 	switch metadata.SignatureType {
 	case SignatureTypeSSH:
-		content := buildContent(commit)
-		err := validateSSH(content, commit.PGPSignature, id, repoConfig)
+		content, err := buildContent(commit)
+		if err != nil {
+			return err
+		}
+		err = validateSSH(content, commit.PGPSignature, id, repoConfig)
 		if err != nil {
 			return fmt.Errorf("failed to validate commit %s: %w", commit.Hash.String(), err)
 		}
@@ -611,7 +615,7 @@ func verifyConnected(start plumbing.Hash, target plumbing.Hash, state *gitkit.Re
 
 		current, found := state.CommitMap[currentHash]
 		if !found {
-			return fmt.Errorf("did not find commit %s", start.String())
+			return fmt.Errorf("did not find commit %s", currentHash.String())
 		}
 
 		for _, p := range current.ParentHashes {
@@ -641,6 +645,33 @@ func validateTags(repo *git.Repository, state *gitkit.RepoState, repoConfig *Rep
 func validateTag(tag *plumbing.Reference, state *gitkit.RepoState, repoConfig *RepoConfig, gitHashSHA1 githash.GitHash, gitHashSHA512 githash.GitHash) error {
 	isExempted := false
 
+	t, isAnnotatedTag := state.TagMap[tag.Hash()]
+	if isAnnotatedTag {
+		if t.Hash != tag.Hash() {
+			return fmt.Errorf("inconsistent hash for tag %s", tag.Hash().String())
+		}
+
+		hash := t.Hash
+		verifiedHash, err := gitHashSHA1.TagSum(hash)
+		if err != nil {
+			return err
+		}
+
+		if !bytes.Equal(verifiedHash, hash[:]) {
+			return fmt.Errorf("failed to verify hash for annotated tag %s", tag.Hash().String())
+		}
+	} else {
+		hash := tag.Hash()
+		verifiedHash, err := gitHashSHA1.CommitSum(tag.Hash())
+		if err != nil {
+			return err
+		}
+
+		if !bytes.Equal(verifiedHash, hash[:]) {
+			return fmt.Errorf("failed to verify hash for light weight tag %s", tag.Hash().String())
+		}
+	}
+
 	tagHash, found := repoConfig.exemptedTags[tag.Name().String()]
 	if found {
 		if tagHash != tag.Hash().String() {
@@ -648,8 +679,6 @@ func validateTag(tag *plumbing.Reference, state *gitkit.RepoState, repoConfig *R
 		}
 		isExempted = true
 	}
-
-	t, isAnnotatedTag := state.TagMap[tag.Hash()]
 
 	tagHashSHA512, found := repoConfig.exemptedTagsSHA512[tag.Name().String()]
 	if found {
@@ -726,17 +755,27 @@ func validateTag(tag *plumbing.Reference, state *gitkit.RepoState, repoConfig *R
 }
 
 func tagContent(tag *object.Tag) (string, error) {
-	sb := strings.Builder{}
+	if tag.TargetType != plumbing.CommitObject {
+		return "", fmt.Errorf("only commit tags are supported, got '%s' for tag '%s'", tag.Type(), tag.Name)
+	}
 
-	sb.WriteString("object " + tag.Target.String() + "\n")
-	sb.WriteString("type commit\n")
-	sb.WriteString("tag " + tag.Name + "\n")
-	sb.WriteString(fmt.Sprintf("tagger %s <%s> %d %s\n", tag.Tagger.Name, tag.Tagger.Email, tag.Tagger.When.Unix(), tag.Tagger.When.Format("-0700")))
+	memoryObject := &plumbing.MemoryObject{}
+	err := tag.EncodeWithoutSignature(memoryObject)
+	if err != nil {
+		return "", err
+	}
 
-	sb.WriteString("\n")
-	sb.WriteString(tag.Message)
+	reader, err := memoryObject.Reader()
+	if err != nil {
+		return "", err
+	}
 
-	return sb.String(), nil
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return "", err
+	}
+
+	return string(data), nil
 }
 
 func computeCommitMetadata(state *gitkit.RepoState, repoConfig *RepoConfig, gitHashSHA1 githash.GitHash, gitHashSHA512 githash.GitHash) (map[plumbing.Hash]*CommitData, error) {
@@ -861,31 +900,24 @@ func computeCommitMetadata(state *gitkit.RepoState, repoConfig *RepoConfig, gitH
 	return commitMap, nil
 }
 
-func buildContent(commit *object.Commit) string {
-	sb := strings.Builder{}
-	sb.WriteString("tree " + commit.TreeHash.String() + "\n")
-
-	for _, parent := range commit.ParentHashes {
-		sb.WriteString("parent " + parent.String() + "\n")
+func buildContent(commit *object.Commit) (string, error) {
+	memoryObject := &plumbing.MemoryObject{}
+	err := commit.EncodeWithoutSignature(memoryObject)
+	if err != nil {
+		return "", err
 	}
 
-	// TODO verify for UTC
-	sb.WriteString(fmt.Sprintf("author %s <%s> %d %s\n", commit.Author.Name, commit.Author.Email, commit.Author.When.Unix(), commit.Author.When.Format("-0700")))
-	sb.WriteString(fmt.Sprintf("committer %s <%s> %d %s\n", commit.Committer.Name, commit.Committer.Email, commit.Committer.When.Unix(), commit.Committer.When.Format("-0700")))
-
-	if commit.MergeTag != "" {
-		parts := strings.Split(commit.MergeTag, "\n")
-
-		sb.WriteString("mergetag")
-		for i := 0; i < len(parts)-1; i++ {
-			sb.WriteString(" ")
-			sb.WriteString(parts[i])
-			sb.WriteString("\n")
-		}
+	reader, err := memoryObject.Reader()
+	if err != nil {
+		return "", err
 	}
-	sb.WriteString("\n")
-	sb.WriteString(commit.Message)
-	return sb.String()
+
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return "", err
+	}
+
+	return string(data), nil
 }
 
 func isProtected(reference *plumbing.Reference, config *RepoConfig) (bool, string) {

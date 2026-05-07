@@ -9,9 +9,9 @@ import (
 	"strings"
 
 	"github.com/go-git/go-git/v5"
+	"github.com/supply-chain-tools/gitverify/gitverify"
 	"github.com/supply-chain-tools/go-sandbox/githash"
 	"github.com/supply-chain-tools/go-sandbox/gitkit"
-	"github.com/supply-chain-tools/go-sandbox/gitverify"
 )
 
 func Tag(prNumber int, message string, version *string) error {

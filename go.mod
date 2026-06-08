@@ -2,7 +2,7 @@ module github.com/supply-chain-tools/gitverify
 
 go 1.25.0
 
-toolchain go1.25.10
+toolchain go1.25.11
 
 require (
 	github.com/go-git/go-git/v5 v5.19.1

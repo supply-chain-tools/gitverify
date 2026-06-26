@@ -61,14 +61,12 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 		return nil, fmt.Errorf("repository %s not found in config", repoUri)
 	}
 
-	if len(repo.Maintainers) == 0 {
+	if repo.Maintainers.Size() == 0 {
 		return nil, fmt.Errorf("no maintainers specified: %s", repoUri)
 	}
-	maintainerSet := hashset.New[string](repo.Maintainers...)
-	contributorSet := hashset.New[string](repo.Contributors...)
 
-	for _, m := range repo.Maintainers {
-		if contributorSet.Contains(m) {
+	for _, m := range repo.Maintainers.Values() {
+		if repo.Contributors.Contains(m) {
 			return nil, fmt.Errorf("'%s' must be maintainer or contributor not both", m)
 		}
 	}
@@ -118,7 +116,7 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 		}
 		allEmails.Add(i.Email)
 
-		if maintainerSet.Contains(i.Email) || contributorSet.Contains(i.Email) {
+		if repo.Maintainers.Contains(i.Email) || repo.Contributors.Contains(i.Email) {
 			maintainerOrContributor[i.Email] = identityEntry
 
 			if forgeEmail != "" {
@@ -126,7 +124,7 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 			}
 		}
 
-		if maintainerSet.Contains(i.Email) {
+		if repo.Maintainers.Contains(i.Email) {
 			maintainerEmails[i.Email] = identityEntry
 
 			if forgeEmail != "" {
@@ -134,7 +132,7 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 			}
 		}
 
-		if contributorSet.Contains(i.Email) {
+		if repo.Contributors.Contains(i.Email) {
 			contributorEmails[i.Email] = identityEntry
 
 			if forgeEmail != "" {
@@ -187,8 +185,6 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 			exemptedTagSHA512Map[exemptTag.Ref] = *exemptTag.Hash.SHA512
 		}
 	}
-
-	protectedBranches := hashset.New[string](repo.ProtectedBranches...)
 
 	var afterSHA1 = hashset.New[plumbing.Hash]()
 	var afterSHA512 = hashset.New[[64]byte]()
@@ -259,7 +255,7 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 		requireSHA512:                      repo.Rules.RequireSHA512,
 		exemptedTags:                       exemptedTagMap,
 		exemptedTagsSHA512:                 exemptedTagSHA512Map,
-		protectedBranches:                  protectedBranches,
+		protectedBranches:                  repo.ProtectedBranches,
 		lockdown:                           repo.Rules.Lockdown,
 	}, nil
 }

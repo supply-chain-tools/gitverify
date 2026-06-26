@@ -58,11 +58,10 @@ type Repository struct {
 	Uri   string  `json:"uri"`
 	After []After `json:"after"`
 
-	Identities        []Identity `json:"identities"`
-	Maintainers       []string   `json:"maintainers"`
-	Contributors      []string   `json:"contributors"`
-	Rules             *Rules     `json:"rules"`
-	ProtectedBranches []string   `json:"protectedBranches"`
+	Maintainers       []string `json:"maintainers"`
+	Contributors      []string `json:"contributors"`
+	Rules             *Rules   `json:"rules"`
+	ProtectedBranches []string `json:"protectedBranches"`
 
 	TrustedForge *string `json:"trustedForge"`
 
@@ -89,10 +88,10 @@ type ParsedRepository struct {
 	After []After
 
 	Identities        []Identity
-	Maintainers       []string
-	Contributors      []string
+	Maintainers       hashset.Set[string]
+	Contributors      hashset.Set[string]
 	Rules             ParsedRules
-	ProtectedBranches []string
+	ProtectedBranches hashset.Set[string]
 
 	TrustedForge *string
 
@@ -173,7 +172,7 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 
 	version := config.Type[len(prefix):]
 
-	expectedVersion := "v0.2"
+	expectedVersion := "v0.3"
 	if version != expectedVersion {
 		return nil, fmt.Errorf("got schema version %s, expected %s", version, expectedVersion)
 	}
@@ -187,10 +186,7 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 			return nil, err
 		}
 
-		identities, err := combineIdentities(config.Identities, repo.Identities)
-		if err != nil {
-			return nil, err
-		}
+		identities := config.Identities
 
 		maintainers, err := combineMaintainers(config.Maintainers, repo.Maintainers)
 		if err != nil {
@@ -207,14 +203,7 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 			return nil, err
 		}
 
-		rules, err := combineRules(config.Rules, repo.Rules)
-		if err != nil {
-			return nil, err
-		}
-
-		trustedForge := combineTrustedForge(config.TrustedForge, repo.TrustedForge)
-
-		parsedRules := ParsedRules{
+		defaultRules := ParsedRules{
 			AllowSSHSignatures:     false,
 			RequireSSHUserPresent:  true,
 			RequireSSHUserVerified: true,
@@ -224,49 +213,15 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 			RequireMergeCommits:    true,
 			RequireCountersigning:  false,
 			RequireSHA512:          false,
+			Lockdown:               false,
 		}
 
-		if rules != nil {
-			if rules.AllowSSHSignatures != nil {
-				parsedRules.AllowSSHSignatures = *rules.AllowSSHSignatures
-			}
-
-			if rules.RequireSSHUserPresent != nil {
-				parsedRules.RequireSSHUserPresent = *rules.RequireSSHUserPresent
-			}
-
-			if rules.RequireSSHUserVerified != nil {
-				parsedRules.RequireSSHUserVerified = *rules.RequireSSHUserVerified
-			}
-
-			if rules.AllowSSHSHA256 != nil {
-				parsedRules.AllowSSHSHA256 = *rules.AllowSSHSHA256
-			}
-
-			if rules.AllowGPGSignatures != nil {
-				parsedRules.AllowGPGSignatures = *rules.AllowGPGSignatures
-			}
-
-			if rules.RequireSignedTags != nil {
-				parsedRules.RequireSignedTags = *rules.RequireSignedTags
-			}
-
-			if rules.RequireMergeCommits != nil {
-				parsedRules.RequireMergeCommits = *rules.RequireMergeCommits
-			}
-
-			if rules.RequireCountersigning != nil {
-				parsedRules.RequireCountersigning = *rules.RequireCountersigning
-			}
-
-			if rules.RequireSHA512 != nil {
-				parsedRules.RequireSHA512 = *rules.RequireSHA512
-			}
-
-			if rules.Lockdown != nil {
-				parsedRules.Lockdown = *rules.Lockdown
-			}
+		parsedRules, err := combineRules(defaultRules, config.Rules, repo.Rules)
+		if err != nil {
+			return nil, err
 		}
+
+		trustedForge := combineTrustedForge(config.TrustedForge, repo.TrustedForge)
 
 		after, err := validateAfter(repo.After, parsedRules.RequireSHA512)
 		if err != nil {
@@ -303,6 +258,14 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 			return nil, fmt.Errorf("requireSha512 does not currently support allowGpgSignatures")
 		}
 
+		if parsedRules.Lockdown == true && parsedRules.RequireSignedTags == false {
+			return nil, fmt.Errorf("requireSignedTags must be used with lockdown")
+		}
+
+		if parsedRules.Lockdown == true && parsedRules.AllowSSHSHA256 == false {
+			return nil, fmt.Errorf("allowSshSha256 cannot be used with lockdown")
+		}
+
 		if allURIs.Contains(uri) {
 			return nil, fmt.Errorf("duplicate URI '%s'", uri)
 		}
@@ -328,18 +291,15 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 	return &parsedConfig, nil
 }
 
-func ensurePresent(identities []Identity, maintainers []string, contributors []string) error {
+func ensurePresent(identities []Identity, maintainers hashset.Set[string], contributors hashset.Set[string]) error {
 	identityEmails := hashset.New[string]()
 
 	for _, identity := range identities {
 		identityEmails.Add(identity.Email)
 	}
 
-	maintainerEmails := hashset.New[string](maintainers...)
-	contributorEmails := hashset.New[string](contributors...)
-
-	maintainerDiff := maintainerEmails.Difference(identityEmails)
-	contributorDiff := contributorEmails.Difference(identityEmails)
+	maintainerDiff := maintainers.Difference(identityEmails)
+	contributorDiff := contributors.Difference(identityEmails)
 
 	if maintainerDiff.Size() > 0 {
 		return fmt.Errorf("maintainers '%s' not present in identities", strings.Join(maintainerDiff.Values(), ","))
@@ -466,45 +426,75 @@ func validateExemptTags(exemptTags []ExemptTag, requireSHA512 bool) ([]ExemptTag
 	return exemptTags, nil
 }
 
-func combineIdentities(global []Identity, local []Identity) ([]Identity, error) {
-	if len(local) != 0 {
-		return local, nil
-	} else if len(global) != 0 {
-		return global, nil
-	} else {
-		return nil, fmt.Errorf("no identities specified")
-	}
+func combineMaintainers(global []string, local []string) (hashset.Set[string], error) {
+	result := hashset.New[string](global...)
+	result.Add(local...)
+
+	return result, nil
 }
 
-func combineMaintainers(global []string, local []string) ([]string, error) {
-	if len(local) != 0 {
-		return local, nil
-	} else if len(global) != 0 {
-		return global, nil
-	} else {
-		return nil, fmt.Errorf("no maintainers specified")
-	}
+func combineContributors(global []string, local []string) (hashset.Set[string], error) {
+	result := hashset.New[string](global...)
+	result.Add(local...)
+
+	return result, nil
 }
 
-func combineContributors(global []string, local []string) ([]string, error) {
-	if len(local) != 0 {
-		return local, nil
-	} else {
-		return global, nil
-	}
+func combineRules(defaultRules ParsedRules, global *Rules, local *Rules) (ParsedRules, error) {
+	rules := overWriteExisting(defaultRules, global)
+	rules = overWriteExisting(rules, local)
+
+	return rules, nil
 }
 
-func combineRules(global *Rules, local *Rules) (*Rules, error) {
-	if local != nil {
-		return local, nil
-	} else if global != nil {
-		return global, nil
-	} else {
-		return nil, fmt.Errorf("no rules specified")
+func overWriteExisting(existing ParsedRules, rules *Rules) ParsedRules {
+	if rules != nil {
+		if rules.AllowSSHSignatures != nil {
+			existing.AllowSSHSignatures = *rules.AllowSSHSignatures
+		}
+
+		if rules.RequireSSHUserPresent != nil {
+			existing.RequireSSHUserPresent = *rules.RequireSSHUserPresent
+		}
+
+		if rules.RequireSSHUserVerified != nil {
+			existing.RequireSSHUserVerified = *rules.RequireSSHUserVerified
+		}
+
+		if rules.AllowSSHSHA256 != nil {
+			existing.AllowSSHSHA256 = *rules.AllowSSHSHA256
+		}
+
+		if rules.AllowGPGSignatures != nil {
+			existing.AllowGPGSignatures = *rules.AllowGPGSignatures
+		}
+
+		if rules.RequireSignedTags != nil {
+			existing.RequireSignedTags = *rules.RequireSignedTags
+		}
+
+		if rules.RequireMergeCommits != nil {
+			existing.RequireMergeCommits = *rules.RequireMergeCommits
+		}
+
+		if rules.RequireCountersigning != nil {
+			existing.RequireCountersigning = *rules.RequireCountersigning
+		}
+
+		if rules.RequireSHA512 != nil {
+			existing.RequireSHA512 = *rules.RequireSHA512
+		}
+
+		if rules.Lockdown != nil {
+			existing.Lockdown = *rules.Lockdown
+		}
 	}
+
+	return existing
 }
 
 func combineTrustedForge(global *string, local *string) *string {
+	// FIXME not possible to remove global with local
 	if local != nil {
 		return local
 	}
@@ -512,12 +502,9 @@ func combineTrustedForge(global *string, local *string) *string {
 	return global
 }
 
-func combineProtectedBranches(global []string, local []string) ([]string, error) {
-	if len(local) != 0 {
-		return local, nil
-	} else if len(global) != 0 {
-		return global, nil
-	} else {
-		return nil, nil
-	}
+func combineProtectedBranches(global []string, local []string) (hashset.Set[string], error) {
+	result := hashset.New[string](global...)
+	result.Add(local...)
+
+	return result, nil
 }

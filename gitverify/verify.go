@@ -54,10 +54,12 @@ func Verify(repo *git.Repository, state *gitkit.RepoState, repoConfig *RepoConfi
 			return err
 		}
 	} else {
-		for _, commit := range state.CommitMap {
-			err := validateCommit(commit, commitMetadata, repoConfig)
-			if err != nil {
-				return err
+		if repoConfig.lockdown {
+			for _, commit := range state.CommitMap {
+				err := validateCommit(commit, commitMetadata, repoConfig)
+				if err != nil {
+					return err
+				}
 			}
 		}
 
@@ -519,6 +521,11 @@ func validateCommitsRecursively(c *object.Commit, state *gitkit.RepoState, commi
 					queue = append(queue, parent)
 					visited.Add(parentHash)
 				}
+			}
+
+			if !config.lockdown {
+				// Only check first parent
+				break
 			}
 		}
 	}

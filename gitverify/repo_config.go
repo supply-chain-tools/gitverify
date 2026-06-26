@@ -33,6 +33,7 @@ type RepoConfig struct {
 	protectedBranches                  hashset.Set[string]
 	exemptedTags                       map[string]string
 	exemptedTagsSHA512                 map[string]string
+	lockdown                           bool
 }
 
 type identity struct {
@@ -259,5 +260,6 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 		exemptedTags:                       exemptedTagMap,
 		exemptedTagsSHA512:                 exemptedTagSHA512Map,
 		protectedBranches:                  protectedBranches,
+		lockdown:                           repo.Rules.Lockdown,
 	}, nil
 }

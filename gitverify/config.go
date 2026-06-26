@@ -51,6 +51,7 @@ type Rules struct {
 	RequireCountersigning *bool `json:"requireCountersigning"`
 
 	RequireSHA512 *bool `json:"requireSha512"`
+	Lockdown      *bool `json:"lockdown"`
 }
 
 type Repository struct {
@@ -111,6 +112,7 @@ type ParsedRules struct {
 	RequireCountersigning bool
 
 	RequireSHA512 bool
+	Lockdown      bool
 }
 
 func GetConfigPath(forge string, org string) (string, error) {
@@ -259,6 +261,10 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 
 			if rules.RequireSHA512 != nil {
 				parsedRules.RequireSHA512 = *rules.RequireSHA512
+			}
+
+			if rules.Lockdown != nil {
+				parsedRules.Lockdown = *rules.Lockdown
 			}
 		}
 

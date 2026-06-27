@@ -63,12 +63,12 @@ func Verify(repo *git.Repository, state *gitkit.RepoState, repoConfig *RepoConfi
 			}
 		}
 
-		err = validateTags(repo, state, repoConfig, gitHashSHA1, gitHashSHA512)
+		err = validateTags(repo, state, repoConfig, commitMetadata, gitHashSHA1, gitHashSHA512)
 		if err != nil {
 			return err
 		}
 
-		err = validateProtectedBranches(repo, state, commitMetadata, repoConfig, gitHashSHA512)
+		err = validateBranches(repo, state, commitMetadata, repoConfig, gitHashSHA512)
 		if err != nil {
 			return err
 		}
@@ -208,7 +208,7 @@ func validateCommit(commit *object.Commit, commitMetadata map[plumbing.Hash]*Com
 		return fmt.Errorf("commit not processed: %s", commit.Hash)
 	}
 
-	if metadata.Ignore || metadata.SignatureVerified {
+	if metadata.AfterOrAncestorOfAfter || metadata.SignatureVerified {
 		return nil
 	}
 
@@ -369,7 +369,7 @@ func validateOpts(opts *ValidateOptions, repo *git.Repository, state *gitkit.Rep
 			tagName := strings.TrimPrefix(tag.Name().String(), "refs/tags/")
 
 			if tagName == opts.Tag {
-				err := validateTag(tag, state, config, gitHashSHA1, gitHashSHA512)
+				err := validateTag(tag, state, config, nil, gitHashSHA1, gitHashSHA512)
 				if err != nil {
 					return err
 				}
@@ -512,7 +512,7 @@ func validateCommitsRecursively(c *object.Commit, state *gitkit.RepoState, commi
 					return fmt.Errorf("target parent hash not found: %s", parentHash)
 				}
 
-				if !commitMetadata[parent.Hash].Ignore {
+				if !commitMetadata[parent.Hash].AfterOrAncestorOfAfter {
 					err := validateCommit(parent, commitMetadata, config)
 					if err != nil {
 						return err
@@ -533,67 +533,30 @@ func validateCommitsRecursively(c *object.Commit, state *gitkit.RepoState, commi
 	return nil
 }
 
-func verifyConnectedToSpecificAfter(commit *object.Commit, after plumbing.Hash, state *gitkit.RepoState, allowCommitsBeforeAfter bool) error {
-	if commit.Hash == after {
-		return nil
-	}
-
-	afterCommit, found := state.CommitMap[after]
-	if !found {
-		return fmt.Errorf("target after hash not found: %s", after.String())
-	}
-
-	// see if commit is a descendant of after
-	connected, err := isLeftDescendant(commit, afterCommit, state)
-	if err != nil {
-		return err
-	}
-
-	if connected {
-		return nil
-	}
-
-	if !allowCommitsBeforeAfter {
-		return fmt.Errorf("commit %s is not a descendant of after %s", commit.Hash.String(), after.String())
-	}
-
-	// see if after is a descendant of commit
-	connected, err = isLeftDescendant(afterCommit, commit, state)
-	if err != nil {
-		return err
-	}
-
-	if !connected {
-		return fmt.Errorf("commit %s is not connected to after %s", commit.Hash.String(), after.String())
-	}
-
-	return nil
-}
-
-func isLeftDescendant(a *object.Commit, b *object.Commit, state *gitkit.RepoState) (bool, error) {
-	current := a
-
+func verifyConnectedToAfter(commit *object.Commit, state *gitkit.RepoState, commitMetadata map[plumbing.Hash]*CommitData, config *RepoConfig) (bool, error) {
+	current := commit
 	for {
-		if current.Hash == b.Hash {
+		metadata, found := commitMetadata[current.Hash]
+		if !found {
+			return false, fmt.Errorf("commit '%s' not found in commit metadata", commit.Hash.String())
+		}
+
+		if metadata.AfterOrAncestorOfAfter {
 			return true, nil
 		}
 
 		if len(current.ParentHashes) == 0 {
-			return false, nil
+			return false, fmt.Errorf("commit '%s' is not connected to any after", commit.Hash.String())
 		}
 
-		parentHash := current.ParentHashes[0]
-
-		parent, found := state.CommitMap[parentHash]
+		current, found = state.CommitMap[current.ParentHashes[0]]
 		if !found {
-			return false, fmt.Errorf("target parent hash not found: %s", parentHash)
+			return false, fmt.Errorf("commit '%s' not found in commit metadata", commit.Hash.String())
 		}
-
-		current = parent
 	}
 }
 
-func validateProtectedBranches(repo *git.Repository, state *gitkit.RepoState, commitMetadata map[plumbing.Hash]*CommitData, config *RepoConfig, gitHashSHA512 githash.GitHash) error {
+func validateBranches(repo *git.Repository, state *gitkit.RepoState, commitMetadata map[plumbing.Hash]*CommitData, config *RepoConfig, gitHashSHA512 githash.GitHash) error {
 	remotes, err := repo.References()
 	if err != nil {
 		return err
@@ -606,6 +569,25 @@ func validateProtectedBranches(repo *git.Repository, state *gitkit.RepoState, co
 			err := validateProtectedBranch(reference, branchName, state, commitMetadata, config, gitHashSHA512)
 			if err != nil {
 				return err
+			}
+		} else {
+			// FIXME
+			if branchName != "" && reference.Type() == plumbing.HashReference {
+				fmt.Printf("%s %s\n", reference.Name().String(), reference.Target().String())
+
+				c, found := state.CommitMap[reference.Hash()]
+				if !found {
+					return fmt.Errorf("did not find commit %s for branch %s", reference.Hash().String(), branchName)
+				}
+
+				connected, err := verifyConnectedToAfter(c, state, commitMetadata, config)
+				if err != nil {
+					return err
+				}
+
+				if !connected {
+					return fmt.Errorf("branch %s is not connected to any after", branchName)
+				}
 			}
 		}
 		return nil
@@ -760,14 +742,14 @@ func verifyConnected(start plumbing.Hash, target plumbing.Hash, state *gitkit.Re
 	return fmt.Errorf("no path from %s to %s", start.String(), target.String())
 }
 
-func validateTags(repo *git.Repository, state *gitkit.RepoState, repoConfig *RepoConfig, gitHashSHA1 githash.GitHash, gitHashSHA512 githash.GitHash) error {
+func validateTags(repo *git.Repository, state *gitkit.RepoState, repoConfig *RepoConfig, commitMetadata map[plumbing.Hash]*CommitData, gitHashSHA1 githash.GitHash, gitHashSHA512 githash.GitHash) error {
 	tags, err := repo.Tags()
 	if err != nil {
 		return err
 	}
 
 	err = tags.ForEach(func(tag *plumbing.Reference) error {
-		return validateTag(tag, state, repoConfig, gitHashSHA1, gitHashSHA512)
+		return validateTag(tag, state, repoConfig, commitMetadata, gitHashSHA1, gitHashSHA512)
 	})
 	if err != nil {
 		return err
@@ -776,7 +758,7 @@ func validateTags(repo *git.Repository, state *gitkit.RepoState, repoConfig *Rep
 	return nil
 }
 
-func validateTag(tag *plumbing.Reference, state *gitkit.RepoState, repoConfig *RepoConfig, gitHashSHA1 githash.GitHash, gitHashSHA512 githash.GitHash) error {
+func validateTag(tag *plumbing.Reference, state *gitkit.RepoState, repoConfig *RepoConfig, commitMetadata map[plumbing.Hash]*CommitData, gitHashSHA1 githash.GitHash, gitHashSHA512 githash.GitHash) error {
 	isExempted := false
 
 	t, isAnnotatedTag := state.TagMap[tag.Hash()]
@@ -876,11 +858,39 @@ func validateTag(tag *plumbing.Reference, state *gitkit.RepoState, repoConfig *R
 			default:
 				return fmt.Errorf("unknown signature type for tag: %s", t.Name)
 			}
+
+			c, found := state.CommitMap[t.Target]
+			if !found {
+				return fmt.Errorf("commit %s missing for tag %s", t.Target.String(), tag.Hash().String())
+			}
+
+			connected, err := verifyConnectedToAfter(c, state, commitMetadata, repoConfig)
+			if err != nil {
+				return err
+			}
+
+			if !connected {
+				return fmt.Errorf("tag %s is not connected to any after", tag.Hash().String())
+			}
 		}
 	} else {
 		if !isExempted {
 			if repoConfig.requireSignedTags {
 				return fmt.Errorf("tag '%s' is lightweight, but signing is required", tag.Name())
+			}
+
+			c, found := state.CommitMap[tag.Hash()]
+			if !found {
+				return fmt.Errorf("commit %s missing for tag %s", t.Target.String(), tag.Hash().String())
+			}
+
+			connected, err := verifyConnectedToAfter(c, state, commitMetadata, repoConfig)
+			if err != nil {
+				return err
+			}
+
+			if !connected {
+				return fmt.Errorf("lightweight tag %s is not connected to any after", tag.Hash().String())
 			}
 		}
 	}

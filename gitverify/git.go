@@ -26,10 +26,10 @@ const (
 var sshExpectedMagicPreamble = []byte("SSHSIG")
 
 type CommitData struct {
-	SignatureType     SignatureType
-	Ignore            bool
-	SignatureVerified bool
-	MergeTag          *object.Tag
+	SignatureType          SignatureType
+	AfterOrAncestorOfAfter bool
+	SignatureVerified      bool
+	MergeTag               *object.Tag
 }
 
 func InferForgeOrgAndRepo(repo *git.Repository) (forge string, org string, repoName string, err error) {
@@ -90,7 +90,7 @@ func ignoreCommitAndParents(commit *object.Commit, commitMap map[plumbing.Hash]*
 		queue = queue[1:]
 
 		c, found := commitMap[current.Hash]
-		if found && c.Ignore {
+		if found && c.AfterOrAncestorOfAfter {
 			continue
 		}
 
@@ -109,8 +109,8 @@ func ignoreCommitAndParents(commit *object.Commit, commitMap map[plumbing.Hash]*
 		}
 
 		commitMap[current.Hash] = &CommitData{
-			SignatureType: signatureType,
-			Ignore:        true,
+			SignatureType:          signatureType,
+			AfterOrAncestorOfAfter: true,
 		}
 	}
 

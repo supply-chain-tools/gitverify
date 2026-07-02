@@ -190,6 +190,12 @@ func verifySignature(maintainerAllowedKey ssh.PublicKey, message string, signatu
 		return err
 	}
 
+	if shouldHaveEmptyRest(sig.Format) {
+		if len(sig.Rest) != 0 {
+			return fmt.Errorf("rest field not empty")
+		}
+	}
+
 	expectedKeyType, err := keyTypeFromSignatureFormat(sig.Format)
 	if err != nil {
 		return err
@@ -256,6 +262,17 @@ func isSupportedKeyFormat(format string) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+func shouldHaveEmptyRest(format string) bool {
+	switch format {
+	case ssh.KeyAlgoSKED25519:
+		return false
+	case ssh.KeyAlgoSKECDSA256:
+		return false
+	default:
+		return true
 	}
 }
 

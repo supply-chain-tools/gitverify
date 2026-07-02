@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"regexp"
 	"runtime/debug"
 	"sort"
 	"strings"
@@ -93,43 +94,61 @@ func main() {
 	case "verify":
 		opts, err := parseVerifyOptions(os.Args)
 		if err != nil {
-			print("failed to parse input: ", err.Error(), "\n")
+			printError(fmt.Errorf("failed to parse input: %w", err))
 			os.Exit(1)
 		}
 
 		err = verify(opts)
 		if err != nil {
-			print("verification failed: ", err.Error(), "\n")
+			printError(fmt.Errorf("verification failed: %w", err))
 			os.Exit(1)
 		}
 	case "after-candidates":
 		opts, err := parseGenerateOptions(os.Args[2:])
 		if err != nil {
-			print("failed to parse input: ", err.Error(), "\n")
+			printError(fmt.Errorf("failed to parse input: %w", err))
 			os.Exit(1)
 		}
 
 		err = afterCandidates(opts)
 		if err != nil {
-			print("after-candidates failed: ", err.Error(), "\n")
+			printError(fmt.Errorf("after-candidates failed: %w", err))
+			os.Exit(1)
 		}
 	case "exempt-tags":
 		opts, err := parseGenerateOptions(os.Args[2:])
 		if err != nil {
-			print("failed to parse input: ", err.Error(), "\n")
+			printError(fmt.Errorf("failed to parse input: %w", err))
 			os.Exit(1)
 		}
 
 		result, err := exemptTags(opts)
 		if err != nil {
-			print("failed to get exempt tags: ", err.Error(), "\n")
+			printError(fmt.Errorf("failed to get exempt tags: %w", err))
 			os.Exit(1)
 		}
 		fmt.Println(result)
 	default:
-		fmt.Printf("unknown command: %s\n", command)
+		printError(fmt.Errorf("unknown command: %s", command))
 		os.Exit(1)
 	}
+}
+
+var allowedErrorCharactersRegex = regexp.MustCompile("^[a-zA-Z0-9 -_.@+/:\"']$")
+
+func printError(err error) {
+	rawErrorMessage := err.Error()
+	sb := strings.Builder{}
+
+	for i := range rawErrorMessage {
+		if allowedErrorCharactersRegex.Match([]byte{rawErrorMessage[i]}) {
+			sb.WriteByte(rawErrorMessage[i])
+		} else {
+			sb.WriteString(fmt.Sprintf("\\%.3d", rawErrorMessage[i]))
+		}
+	}
+
+	print(sb.String(), "\n")
 }
 
 type VerifyOptions struct {

@@ -82,6 +82,12 @@ func main() {
 		fmt.Println(usage)
 	}
 
+	err := checkForUnsupportedEnvironmentVariables()
+	if err != nil {
+		printError(err)
+		os.Exit(1)
+	}
+
 	command := "verify"
 	if len(os.Args) > 1 {
 		c := os.Args[1]
@@ -132,6 +138,27 @@ func main() {
 		printError(fmt.Errorf("unknown command: %s", command))
 		os.Exit(1)
 	}
+}
+
+func checkForUnsupportedEnvironmentVariables() error {
+	unsupportedEnvironmentVariables := hashset.New[string](
+		"GIT_DIR",
+		"GIT_CEILING_DIRECTORIES",
+		"GIT_WORK_TREE",
+		"GIT_INDEX_FILE",
+		"GIT_OBJECT_DIRECTORY",
+		"GIT_ALTERNATE_OBJECT_DIRECTORIES",
+	)
+
+	for _, env := range os.Environ() {
+		pair := strings.SplitN(env, "=", 2)
+		key := pair[0]
+		if unsupportedEnvironmentVariables.Contains(key) {
+			return fmt.Errorf("environment variable %s is not supported", key)
+		}
+	}
+
+	return nil
 }
 
 var allowedErrorCharactersRegex = regexp.MustCompile("^[a-zA-Z0-9 -_.@+/:\"']$")

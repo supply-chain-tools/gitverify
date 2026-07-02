@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"regexp"
 	"runtime/debug"
 	"sort"
@@ -380,6 +381,11 @@ func verify(opts *VerifyOptions) error {
 		return err
 	}
 
+	err = checkForUnsupportedGitPaths(repoDir)
+	if err != nil {
+		return err
+	}
+
 	state := gitkit.LoadRepoState(repo)
 	sha1Hash := githash.NewGitHashFromRepoState(state, sha1.New())
 	sha512Hash := githash.NewGitHashFromRepoState(state, sha512.New())
@@ -421,6 +427,20 @@ func verify(opts *VerifyOptions) error {
 	return nil
 }
 
+func checkForUnsupportedGitPaths(repoDir string) error {
+	replacePath := filepath.Join(repoDir, ".git", "refs", "replace")
+	if _, err := os.Stat(replacePath); err == nil {
+		return fmt.Errorf("git replace is not supported")
+	}
+
+	graftPath := filepath.Join(repoDir, ".git", "info", "grafts")
+	if _, err := os.Stat(graftPath); err == nil {
+		return fmt.Errorf("git graft is not supported")
+	}
+
+	return nil
+}
+
 func loadRepoConfig(repo *git.Repository, configFilePath string, inputRepoUri string) (config *gitverify.RepoConfig, repoUri string, err error) {
 	repoUri = inputRepoUri
 	if configFilePath == "" {
@@ -454,6 +474,11 @@ func afterCandidates(opts *GenerateOptions) error {
 	repo, err := gitkit.OpenRepoInLocalPath(repoDir)
 	if err != nil {
 		return fmt.Errorf("failed to open repo: %w", err)
+	}
+
+	err = checkForUnsupportedGitPaths(repoDir)
+	if err != nil {
+		return err
 	}
 
 	repoConfig, _, err := loadRepoConfig(repo, opts.configFilePath, opts.repoUri)
@@ -539,6 +564,11 @@ func exemptTags(opts *GenerateOptions) (string, error) {
 	useSHA512 := opts.useSHA512
 
 	repo, err := gitkit.OpenRepoInLocalPath(repoDir)
+	if err != nil {
+		return "", err
+	}
+
+	err = checkForUnsupportedGitPaths(repoDir)
 	if err != nil {
 		return "", err
 	}

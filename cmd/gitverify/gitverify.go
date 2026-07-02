@@ -405,7 +405,11 @@ func verify(opts *VerifyOptions) error {
 
 	if localState {
 		if configFilePath == "" {
-			forge, org, repoName := gitverify.InferForgeOrgAndRepo(repo)
+			forge, org, repoName, err := gitverify.InferForgeOrgAndRepo(repo)
+			if err != nil {
+				return err
+			}
+
 			localStatePath, err = gitverify.GetLocalStatePath(forge, org, repoName)
 			if err != nil {
 				return err
@@ -449,8 +453,11 @@ func checkForUnsupportedGitPaths(repoDir string) error {
 func loadRepoConfig(repo *git.Repository, configFilePath string, inputRepoUri string) (config *gitverify.RepoConfig, repoUri string, err error) {
 	repoUri = inputRepoUri
 	if configFilePath == "" {
-		forge, org, repoName := gitverify.InferForgeOrgAndRepo(repo)
-		var err error
+		forge, org, repoName, err := gitverify.InferForgeOrgAndRepo(repo)
+		if err != nil {
+			return nil, "", err
+		}
+
 		configFilePath, err = gitverify.GetConfigPath(forge, org)
 		if err != nil {
 			return nil, "", err

@@ -2,7 +2,6 @@ package gitverify
 
 import (
 	"fmt"
-	"log"
 	"strings"
 
 	"github.com/go-git/go-git/v5"
@@ -33,22 +32,22 @@ type CommitData struct {
 	MergeTag          *object.Tag
 }
 
-func InferForgeOrgAndRepo(repo *git.Repository) (forge string, org string, repoName string) {
+func InferForgeOrgAndRepo(repo *git.Repository) (forge string, org string, repoName string, err error) {
 	remote, err := repo.Remote("origin")
 	if err != nil {
-		log.Fatal(err)
+		return "", "", "", err
 	}
 	urls := remote.Config().URLs
 	if len(urls) != 1 {
-		log.Fatal("Expected exactly one remote url")
+		return "", "", "", fmt.Errorf("expected exactly one remote url, got %d", len(urls))
 	}
 
 	org, repoName, err = getGitHubOrgRepo(urls[0])
 	if err != nil {
-		log.Fatal(err)
+		return "", "", "", err
 	}
 
-	return gitHubForgeId, org, repoName
+	return gitHubForgeId, org, repoName, nil
 }
 
 func getGitHubOrgRepo(url string) (org string, repoName string, err error) {

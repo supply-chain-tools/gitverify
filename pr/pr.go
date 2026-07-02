@@ -36,7 +36,11 @@ func Tag(prNumber int, message string, version *string) error {
 
 	sb := strings.Builder{}
 
-	_, orgName, repoName := gitverify.InferForgeOrgAndRepo(repo)
+	_, orgName, repoName, err := gitverify.InferForgeOrgAndRepo(repo)
+	if err != nil {
+		return err
+	}
+
 	sb.WriteString(fmt.Sprintf("PR https://github.com/%s/%s/pull/%d\n\n", orgName, repoName, prNumber))
 
 	if message != "" {
@@ -67,7 +71,11 @@ func Merge(prNumber int, message string) error {
 
 	sb := strings.Builder{}
 
-	_, orgName, repoName := gitverify.InferForgeOrgAndRepo(repo)
+	_, orgName, repoName, err := gitverify.InferForgeOrgAndRepo(repo)
+	if err != nil {
+		return err
+	}
+
 	sb.WriteString(fmt.Sprintf("Merged PR https://github.com/%s/%s/pull/%d\n\n", orgName, repoName, prNumber))
 
 	if message != "" {

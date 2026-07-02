@@ -142,6 +142,7 @@ func main() {
 }
 
 func checkForUnsupportedEnvironmentVariables() error {
+	// https://git-scm.com/book/ms/v2/Git-Internals-Environment-Variables
 	unsupportedEnvironmentVariables := hashset.New[string](
 		"GIT_DIR",
 		"GIT_CEILING_DIRECTORIES",
@@ -433,21 +434,25 @@ func verify(opts *VerifyOptions) error {
 }
 
 func checkForUnsupportedGitPaths(repoDir string) error {
+	// https://git-scm.com/docs/git-replace
 	replacePath := filepath.Join(repoDir, ".git", "refs", "replace")
 	if _, err := os.Stat(replacePath); err == nil {
 		return fmt.Errorf("git replace is not supported")
 	}
 
+	// https://git-scm.com/docs/git-replace#Documentation/git-replace.txt---graftcommitparent
 	graftPath := filepath.Join(repoDir, ".git", "info", "grafts")
 	if _, err := os.Stat(graftPath); err == nil {
 		return fmt.Errorf("git graft is not supported")
 	}
 
+	// https://git-scm.com/docs/git-clone#Documentation/git-clone.txt---shared
 	alternatesPath := filepath.Join(repoDir, ".git", "objects", "info", "alternates")
 	if _, err := os.Stat(alternatesPath); err == nil {
 		return fmt.Errorf("git alternates is not supported")
 	}
 
+	// https://git-scm.com/docs/gitnamespaces
 	namespacesPath := filepath.Join(repoDir, ".git", "refs", "namespaces")
 	if _, err := os.Stat(namespacesPath); err == nil {
 		return fmt.Errorf("git namespaces is not supported")

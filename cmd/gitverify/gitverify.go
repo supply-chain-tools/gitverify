@@ -142,7 +142,7 @@ func main() {
 }
 
 func checkForUnsupportedEnvironmentVariables() error {
-	// https://git-scm.com/book/ms/v2/Git-Internals-Environment-Variables
+	// https://git-scm.com/docs/git#_environment_variables
 	unsupportedEnvironmentVariables := hashset.New[string](
 		"GIT_DIR",
 		"GIT_CEILING_DIRECTORIES",
@@ -151,6 +151,7 @@ func checkForUnsupportedEnvironmentVariables() error {
 		"GIT_OBJECT_DIRECTORY",
 		"GIT_ALTERNATE_OBJECT_DIRECTORIES",
 		"GIT_NAMESPACE",
+		"GIT_COMMON_DIR",
 	)
 
 	for _, env := range os.Environ() {

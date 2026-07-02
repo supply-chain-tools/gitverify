@@ -459,6 +459,12 @@ func checkForUnsupportedGitPaths(repoDir string) error {
 		return fmt.Errorf("git namespaces is not supported")
 	}
 
+	// https://git-scm.com/docs/shallow
+	shallowPath := filepath.Join(repoDir, ".git", "shallow")
+	if _, err := os.Stat(shallowPath); err == nil {
+		return fmt.Errorf("git shallow is not supported")
+	}
+
 	return nil
 }
 

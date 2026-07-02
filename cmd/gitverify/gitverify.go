@@ -149,6 +149,7 @@ func checkForUnsupportedEnvironmentVariables() error {
 		"GIT_INDEX_FILE",
 		"GIT_OBJECT_DIRECTORY",
 		"GIT_ALTERNATE_OBJECT_DIRECTORIES",
+		"GIT_NAMESPACE",
 	)
 
 	for _, env := range os.Environ() {
@@ -445,6 +446,11 @@ func checkForUnsupportedGitPaths(repoDir string) error {
 	alternatesPath := filepath.Join(repoDir, ".git", "objects", "info", "alternates")
 	if _, err := os.Stat(alternatesPath); err == nil {
 		return fmt.Errorf("git alternates is not supported")
+	}
+
+	namespacesPath := filepath.Join(repoDir, ".git", "refs", "namespaces")
+	if _, err := os.Stat(namespacesPath); err == nil {
+		return fmt.Errorf("git namespaces is not supported")
 	}
 
 	return nil

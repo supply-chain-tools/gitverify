@@ -314,9 +314,13 @@ func getRepoDir() (string, error) {
 		return "", err
 	}
 
-	repoDir, _, err := gitkit.GetRootPathOfLocalGitRepo(basePath)
+	repoDir, found, err := gitkit.GetRootPathOfLocalGitRepo(basePath)
 	if err != nil {
 		return "", err
+	}
+
+	if !found {
+		return "", fmt.Errorf("no repository found in %s", basePath)
 	}
 
 	return repoDir, nil

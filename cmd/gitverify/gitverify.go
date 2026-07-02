@@ -438,6 +438,11 @@ func checkForUnsupportedGitPaths(repoDir string) error {
 		return fmt.Errorf("git graft is not supported")
 	}
 
+	alternatesPath := filepath.Join(repoDir, ".git", "objects", "info", "alternates")
+	if _, err := os.Stat(alternatesPath); err == nil {
+		return fmt.Errorf("git alternates is not supported")
+	}
+
 	return nil
 }
 

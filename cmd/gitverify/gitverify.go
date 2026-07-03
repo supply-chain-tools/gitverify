@@ -506,7 +506,7 @@ func checkForRefSymlinks(repoDir string) error {
 			}
 
 			if !(info.Mode().IsDir() || info.Mode().IsRegular()) {
-				return fmt.Errorf("symlinks are not supported in refs dir: %s", path)
+				return fmt.Errorf("only directories and regular files are supported in refs dir: %s", path)
 			}
 
 			return nil
@@ -649,7 +649,7 @@ func checkPackedRefs(repoDir string) error {
 		}
 
 		if strings.HasPrefix(ref, "refs/namespaces/") {
-			return fmt.Errorf("git replace is not supported in %s", packedRefsPath)
+			return fmt.Errorf("git namespaces is not supported in %s", packedRefsPath)
 		}
 
 		if refsSet.Contains(ref) {

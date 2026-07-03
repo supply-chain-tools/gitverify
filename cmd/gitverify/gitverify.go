@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"crypto/sha1"
 	"crypto/sha512"
 	"encoding/json"
@@ -488,6 +489,11 @@ func checkForUnsupportedGitPaths(repoDir string) error {
 		return err
 	}
 
+	err = checkPackedRefs(repoDir)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -580,6 +586,70 @@ func checkObjectsDir(repoDir string) error {
 				}
 			}
 		}
+	}
+
+	return nil
+}
+
+func checkPackedRefs(repoDir string) error {
+	// https://git-scm.com/docs/git-pack-refs
+	packedRefsPath := filepath.Join(repoDir, ".git", "packed-refs")
+
+	file, err := os.Open(packedRefsPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+
+		return err
+	}
+
+	scanner := bufio.NewScanner(file)
+	lineNumber := 0
+
+	refsSet := hashset.New[string]()
+	for scanner.Scan() {
+		lineNumber++
+
+		line := scanner.Text()
+		if lineNumber == 1 {
+			if strings.HasPrefix(line, "#") {
+				continue
+			} else {
+				return fmt.Errorf("unexpected first line of %s", packedRefsPath)
+			}
+		}
+
+		parts := strings.SplitN(line, " ", 2)
+		if len(parts) != 2 {
+			return fmt.Errorf("unexpected line %d in %s", lineNumber, packedRefsPath)
+		}
+
+		hash := parts[0]
+		if !gitverify.HexSHA1Regex.MatchString(hash) {
+			return fmt.Errorf("expected line %d in %s to start with a SHA-1 hash", lineNumber, packedRefsPath)
+		}
+
+		ref := parts[1]
+		if !strings.HasPrefix(ref, "refs/") {
+			return fmt.Errorf("expected line %d in %s to end with a ref", lineNumber, packedRefsPath)
+		}
+
+		if refsSet.Contains(ref) {
+			return fmt.Errorf("duplicate ref at line %d in %s", lineNumber, packedRefsPath)
+		}
+
+		refsSet.Add(ref)
+	}
+
+	err = scanner.Err()
+	closeErr := file.Close()
+	if err != nil && closeErr != nil {
+		return fmt.Errorf("%w %w", err, closeErr)
+	} else if err != nil {
+		return err
+	} else if closeErr != nil {
+		return closeErr
 	}
 
 	return nil

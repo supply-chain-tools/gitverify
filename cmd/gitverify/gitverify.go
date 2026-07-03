@@ -78,7 +78,7 @@ Verify repo and make sure a given commit and tag is present, that the tag points
 is on branch 'main' and that the commit is a descendant of 'after'
     $ gitverify --commit 1f46f2053221c040ce5bcba0239bc09214a37658 --tag v0.0.1 --branch main`
 
-var packRegex = regexp.MustCompile("^pack-[a-f0-9]{40}\\.(pack|idx|rev)$")
+var packRegex = regexp.MustCompile("^pack-[a-f0-9]{40}\\.(pack|idx|rev|mtimes)$")
 
 func main() {
 	flag.Usage = func() {
@@ -516,11 +516,22 @@ func checkForUnsupportedPackFiles(repoDir string) error {
 	}
 
 	for _, entry := range entries {
-		if entry.IsDir() {
-			return fmt.Errorf("unsupported directory in %s", packDir)
+		if !entry.Type().IsRegular() {
+			return fmt.Errorf("unsupported non-regular file in %s", packDir)
 		}
 
-		if !packRegex.Match([]byte(entry.Name())) {
+		name := entry.Name()
+		if name == "multi-pack-index" {
+			// https://git-scm.com/docs/multi-pack-index
+			return fmt.Errorf("git multi-pack-index is not supported")
+		}
+
+		if strings.HasSuffix(name, ".bitmap") {
+			// https://git-scm.com/docs/bitmap-format
+			return fmt.Errorf("git bitmap is not supported")
+		}
+
+		if !packRegex.Match([]byte(name)) {
 			return fmt.Errorf("unsupported name of file %s in %s", entry.Name(), packDir)
 		}
 	}

@@ -620,12 +620,21 @@ func checkPackedRefs(repoDir string) error {
 			}
 		}
 
+		if strings.HasPrefix(line, "^") {
+			if !gitverify.HexSHA1Regex.MatchString(line[1:]) {
+				return fmt.Errorf("unexpected peeled hash on line %d in %s", lineNumber, packedRefsPath)
+			}
+
+			continue
+		}
+
 		parts := strings.SplitN(line, " ", 2)
 		if len(parts) != 2 {
 			return fmt.Errorf("unexpected line %d in %s", lineNumber, packedRefsPath)
 		}
 
 		hash := parts[0]
+
 		if !gitverify.HexSHA1Regex.MatchString(hash) {
 			return fmt.Errorf("expected line %d in %s to start with a SHA-1 hash", lineNumber, packedRefsPath)
 		}
@@ -633,6 +642,14 @@ func checkPackedRefs(repoDir string) error {
 		ref := parts[1]
 		if !strings.HasPrefix(ref, "refs/") {
 			return fmt.Errorf("expected line %d in %s to end with a ref", lineNumber, packedRefsPath)
+		}
+
+		if strings.HasPrefix(ref, "refs/replace/") {
+			return fmt.Errorf("git replace is not supported in %s", packedRefsPath)
+		}
+
+		if strings.HasPrefix(ref, "refs/namespaces/") {
+			return fmt.Errorf("git replace is not supported in %s", packedRefsPath)
 		}
 
 		if refsSet.Contains(ref) {

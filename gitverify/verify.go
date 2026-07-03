@@ -24,8 +24,9 @@ type ValidateOptions struct {
 	VerifyOnTip  bool
 }
 
-const hexSHA1Regex = "^[a-f0-9]{40}$"
-const hexSHA512Regex = "^[a-f0-9]{128}$"
+var Hex2Regex = regexp.MustCompile("^[a-f0-9]{2}$")
+var HexSHA1Regex = regexp.MustCompile("^[a-f0-9]{40}$")
+var HexSHA512Regex = regexp.MustCompile("^[a-f0-9]{128}$")
 
 func Verify(repo *git.Repository, state *gitkit.RepoState, repoConfig *RepoConfig, gitHashSHA1 githash.GitHash, gitHashSHA512 githash.GitHash, opts *ValidateOptions) error {
 	commitMetadata, err := computeCommitMetadata(state, repoConfig, gitHashSHA1, gitHashSHA512)
@@ -44,12 +45,7 @@ func Verify(repo *git.Repository, state *gitkit.RepoState, repoConfig *RepoConfi
 	}
 
 	if opts != nil && opts.Commit != "" {
-		matched, err := regexp.MatchString(hexSHA1Regex, opts.Commit)
-		if err != nil {
-			return err
-		}
-
-		if !matched {
+		if !HexSHA1Regex.MatchString(opts.Commit) {
 			return fmt.Errorf("target commit must be a 40 character hex, not '%s'", opts.Commit)
 		}
 
@@ -656,12 +652,8 @@ func validateProtectedBranch(reference *plumbing.Reference, branchName string, s
 				for i := len(messageLines) - 1; i >= 0; i-- {
 					if strings.HasPrefix(messageLines[i], prefix) {
 						hash := strings.TrimPrefix(messageLines[i], prefix)
-						matched, err := regexp.MatchString(hexSHA512Regex, hash)
-						if err != nil {
-							return err
-						}
 
-						if !matched {
+						if !HexSHA512Regex.MatchString(hash) {
 							return fmt.Errorf("malformed Gitverify-object-sha512 in merge commit: %s", current.Hash.String())
 						}
 

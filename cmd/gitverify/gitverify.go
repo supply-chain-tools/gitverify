@@ -483,6 +483,11 @@ func checkForUnsupportedGitPaths(repoDir string) error {
 		return err
 	}
 
+	err = checkObjectsDir(repoDir)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -533,6 +538,47 @@ func checkForUnsupportedPackFiles(repoDir string) error {
 
 		if !packRegex.Match([]byte(name)) {
 			return fmt.Errorf("unsupported name of file %s in %s", entry.Name(), packDir)
+		}
+	}
+
+	return nil
+}
+
+func checkObjectsDir(repoDir string) error {
+	objectsDir := filepath.Join(repoDir, ".git", "objects")
+
+	entries, err := os.ReadDir(objectsDir)
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range entries {
+		name := entry.Name()
+
+		if len(name) == 2 {
+			if !entry.Type().IsDir() {
+				return fmt.Errorf("%s in %s expected to be a directory", name, objectsDir)
+			}
+
+			if !gitverify.Hex2Regex.MatchString(name) {
+				return fmt.Errorf("%s in %s expected to be hex", name, objectsDir)
+			}
+
+			objects, err := os.ReadDir(filepath.Join(objectsDir, name))
+			if err != nil {
+				return err
+			}
+
+			for _, object := range objects {
+				if !object.Type().IsRegular() {
+					return fmt.Errorf("object %s in %s expected to be a regular file", object.Name(), filepath.Join(objectsDir, name))
+				}
+
+				objectHash := name + object.Name()
+				if !gitverify.HexSHA1Regex.MatchString(objectHash) {
+					return fmt.Errorf("object %s in %s expected to be a SHA-1 hash", objectHash, objectsDir)
+				}
+			}
 		}
 	}
 

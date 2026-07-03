@@ -379,12 +379,8 @@ func validateAfter(after []After, requireSHA512 bool) ([]After, error) {
 		}
 
 		if a.SHA1 != nil {
-			match, err := regexp.MatchString(hexSHA1Regex, *a.SHA1)
-			if err != nil {
-				return nil, err
-			}
 
-			if !match {
+			if !HexSHA1Regex.MatchString(*a.SHA1) {
 				return nil, fmt.Errorf("after.sha1 '%s' must be a 40 character hex", *a.SHA1)
 			}
 
@@ -400,12 +396,7 @@ func validateAfter(after []After, requireSHA512 bool) ([]After, error) {
 		}
 
 		if a.SHA512 != nil {
-			match, err := regexp.MatchString(hexSHA512Regex, *a.SHA512)
-			if err != nil {
-				return nil, err
-			}
-
-			if !match {
+			if !HexSHA512Regex.MatchString(*a.SHA512) {
 				return nil, fmt.Errorf("after.sha512 '%s' must be a 128 character hex", *a.SHA512)
 			}
 
@@ -445,12 +436,7 @@ func validateExemptTags(exemptTags []ExemptTag, requireSHA512 bool) ([]ExemptTag
 		}
 
 		if exemptTag.Hash.SHA1 != nil {
-			match, err := regexp.MatchString(hexSHA1Regex, *exemptTag.Hash.SHA1)
-			if err != nil {
-				return nil, err
-			}
-
-			if !match {
+			if !HexSHA1Regex.MatchString(*exemptTag.Hash.SHA1) {
 				return nil, fmt.Errorf("exemptTag.hash.sha1 '%s' must be a 40 character hex", *exemptTag.Hash.SHA1)
 			}
 		}
@@ -460,12 +446,7 @@ func validateExemptTags(exemptTags []ExemptTag, requireSHA512 bool) ([]ExemptTag
 		}
 
 		if exemptTag.Hash.SHA512 != nil {
-			match, err := regexp.MatchString(hexSHA512Regex, *exemptTag.Hash.SHA512)
-			if err != nil {
-				return nil, err
-			}
-
-			if !match {
+			if !HexSHA512Regex.MatchString(*exemptTag.Hash.SHA512) {
 				return nil, fmt.Errorf("exemptTag.hash.sha512 '%s' must be a 128 character hex", *exemptTag.Hash.SHA512)
 			}
 		}

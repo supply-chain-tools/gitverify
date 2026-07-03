@@ -471,6 +471,23 @@ func checkForUnsupportedGitPaths(repoDir string) error {
 		return fmt.Errorf("git reftable is not supported")
 	}
 
+	refDir := filepath.Join(repoDir, ".git", "refs")
+	err := filepath.Walk(refDir,
+		func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+
+			if !(info.Mode().IsDir() || info.Mode().IsRegular()) {
+				return fmt.Errorf("symlinks are not supported in refs dir: %s", path)
+			}
+
+			return nil
+		})
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 

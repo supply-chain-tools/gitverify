@@ -465,6 +465,12 @@ func checkForUnsupportedGitPaths(repoDir string) error {
 		return fmt.Errorf("git shallow is not supported")
 	}
 
+	// https://git-scm.com/docs/reftable
+	reftablePath := filepath.Join(repoDir, ".git", "reftable")
+	if _, err := os.Stat(reftablePath); err == nil {
+		return fmt.Errorf("git reftable is not supported")
+	}
+
 	return nil
 }
 

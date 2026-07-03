@@ -78,6 +78,8 @@ Verify repo and make sure a given commit and tag is present, that the tag points
 is on branch 'main' and that the commit is a descendant of 'after'
     $ gitverify --commit 1f46f2053221c040ce5bcba0239bc09214a37658 --tag v0.0.1 --branch main`
 
+var packRegex = regexp.MustCompile("^pack-[a-f0-9]{40}\\.(pack|idx|rev)$")
+
 func main() {
 	flag.Usage = func() {
 		fmt.Println(usage)
@@ -471,6 +473,20 @@ func checkForUnsupportedGitPaths(repoDir string) error {
 		return fmt.Errorf("git reftable is not supported")
 	}
 
+	err := checkForRefSymlinks(repoDir)
+	if err != nil {
+		return err
+	}
+
+	err = checkForUnsupportedPackFiles(repoDir)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func checkForRefSymlinks(repoDir string) error {
 	refDir := filepath.Join(repoDir, ".git", "refs")
 	err := filepath.Walk(refDir,
 		func(path string, info os.FileInfo, err error) error {
@@ -486,6 +502,27 @@ func checkForUnsupportedGitPaths(repoDir string) error {
 		})
 	if err != nil {
 		return err
+	}
+
+	return nil
+}
+
+func checkForUnsupportedPackFiles(repoDir string) error {
+	packDir := filepath.Join(repoDir, ".git", "objects", "pack")
+
+	entries, err := os.ReadDir(packDir)
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			return fmt.Errorf("unsupported directory in %s", packDir)
+		}
+
+		if !packRegex.Match([]byte(entry.Name())) {
+			return fmt.Errorf("unsupported name of file %s in %s", entry.Name(), packDir)
+		}
 	}
 
 	return nil

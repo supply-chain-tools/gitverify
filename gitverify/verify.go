@@ -24,8 +24,9 @@ type ValidateOptions struct {
 	VerifyOnTip  bool
 }
 
-const hexSHA1Regex = "^[a-f0-9]{40}$"
-const hexSHA512Regex = "^[a-f0-9]{128}$"
+var Hex2Regex = regexp.MustCompile("^[a-f0-9]{2}$")
+var HexSHA1Regex = regexp.MustCompile("^[a-f0-9]{40}$")
+var HexSHA512Regex = regexp.MustCompile("^[a-f0-9]{128}$")
 
 func Verify(repo *git.Repository, state *gitkit.RepoState, repoConfig *RepoConfig, gitHashSHA1 githash.GitHash, gitHashSHA512 githash.GitHash, opts *ValidateOptions) error {
 	commitMetadata, err := computeCommitMetadata(state, repoConfig, gitHashSHA1, gitHashSHA512)
@@ -33,13 +34,18 @@ func Verify(repo *git.Repository, state *gitkit.RepoState, repoConfig *RepoConfi
 		return err
 	}
 
-	if opts != nil && opts.Commit != "" {
-		matched, err := regexp.MatchString(hexSHA1Regex, opts.Commit)
-		if err != nil {
-			return err
-		}
+	remoteSet, err := getRemoteSet(repo)
+	if err != nil {
+		return err
+	}
 
-		if !matched {
+	err = validateRefs(repo, state, repoConfig, remoteSet)
+	if err != nil {
+		return err
+	}
+
+	if opts != nil && opts.Commit != "" {
+		if !HexSHA1Regex.MatchString(opts.Commit) {
 			return fmt.Errorf("target commit must be a 40 character hex, not '%s'", opts.Commit)
 		}
 
@@ -67,6 +73,131 @@ func Verify(repo *git.Repository, state *gitkit.RepoState, repoConfig *RepoConfi
 	}
 
 	return nil
+}
+
+func validateRefs(repo *git.Repository, state *gitkit.RepoState, repoConfig *RepoConfig, remoteSet hashset.Set[string]) error {
+	refsIter, err := repo.References()
+	if err != nil {
+		return err
+	}
+
+	refSet := hashset.New[string]()
+	err = refsIter.ForEach(func(reference *plumbing.Reference) error {
+		refSet.Add(reference.Name().String())
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	refsIter, err = repo.References()
+	if err != nil {
+		return err
+	}
+
+	err = refsIter.ForEach(func(reference *plumbing.Reference) error {
+		referenceName := reference.Name().String()
+
+		if referenceName == "HEAD" {
+			switch reference.Type() {
+			case plumbing.SymbolicReference:
+				targetName := reference.Target().String()
+				if !refSet.Contains(targetName) {
+					return fmt.Errorf("symbolic reference '%s' pointed to by HEAD not found", targetName)
+				}
+
+				if targetName == "HEAD" {
+					return fmt.Errorf("HEAD is pointing to itself")
+				}
+			case plumbing.HashReference:
+				_, found := state.CommitMap[reference.Hash()]
+				if !found {
+					return fmt.Errorf("did not find commit %s pointed to by HEAD", reference.Hash().String())
+				}
+			default:
+				return fmt.Errorf("unsupported reference type %s for HEAD", reference.Type().String())
+			}
+
+			return nil
+		}
+
+		if strings.HasPrefix(referenceName, "refs/remotes/") {
+			parts := strings.Split(referenceName, "/")
+			remote := parts[2]
+			if !remoteSet.Contains(remote) {
+				return fmt.Errorf("reference %s does not match any remote", referenceName)
+			}
+
+			name := strings.Join(parts[3:], "")
+			if name == "" {
+				return fmt.Errorf("reference %s is too short", referenceName)
+			}
+
+			if name == "HEAD" {
+				if reference.Type() != plumbing.SymbolicReference {
+					return fmt.Errorf("reference %s is expected to be a symbolic", referenceName)
+				}
+
+				targetName := reference.Target().String()
+				expectedPrefix := fmt.Sprintf("refs/remotes/%s/", remote)
+				if !strings.HasPrefix(targetName, expectedPrefix) {
+					return fmt.Errorf("reference %s is expected to start with %s", referenceName, expectedPrefix)
+				}
+
+				if !refSet.Contains(targetName) {
+					return fmt.Errorf("the target of reference %s is missing", targetName)
+				}
+
+				targetBranchName := strings.TrimPrefix(targetName, expectedPrefix)
+				if !repoConfig.protectedBranches.Contains(targetBranchName) {
+					return fmt.Errorf("reference %s must point to a protected branch", referenceName)
+				}
+			} else {
+				if reference.Type() != plumbing.HashReference {
+					return fmt.Errorf("reference %s is expected to be a hash", referenceName)
+				}
+
+				_, found := state.CommitMap[reference.Hash()]
+				if !found {
+					return fmt.Errorf("did not find commit %s for reference %s", reference.Hash().String(), referenceName)
+				}
+			}
+		} else if strings.HasPrefix(referenceName, "refs/heads/") {
+			if reference.Type() != plumbing.HashReference {
+				return fmt.Errorf("reference %s is expected to be a hash", referenceName)
+			}
+
+			_, found := state.CommitMap[reference.Hash()]
+			if !found {
+				return fmt.Errorf("did not find commit %s for reference %s", reference.Hash().String(), referenceName)
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func getRemoteSet(repo *git.Repository) (hashset.Set[string], error) {
+	remoteSet := hashset.New[string]()
+	r, err := repo.Remotes()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, remote := range r {
+		candidate := remote.Config().Name
+		if strings.Contains(candidate, "/") {
+			return nil, fmt.Errorf("remote '%s' contains '/'", candidate)
+		}
+		remoteSet.Add(candidate)
+	}
+
+	return remoteSet, nil
 }
 
 func validateCommit(commit *object.Commit, commitMetadata map[plumbing.Hash]*CommitData, repoConfig *RepoConfig) error {
@@ -539,12 +670,8 @@ func validateProtectedBranch(reference *plumbing.Reference, branchName string, s
 				for i := len(messageLines) - 1; i >= 0; i-- {
 					if strings.HasPrefix(messageLines[i], prefix) {
 						hash := strings.TrimPrefix(messageLines[i], prefix)
-						matched, err := regexp.MatchString(hexSHA512Regex, hash)
-						if err != nil {
-							return err
-						}
 
-						if !matched {
+						if !HexSHA512Regex.MatchString(hash) {
 							return fmt.Errorf("malformed Gitverify-object-sha512 in merge commit: %s", current.Hash.String())
 						}
 
@@ -923,14 +1050,15 @@ func buildContent(commit *object.Commit) (string, error) {
 func isProtected(reference *plumbing.Reference, config *RepoConfig) (bool, string) {
 	isProtected := false
 	var branchName string
-	if strings.HasPrefix(reference.Name().String(), "refs/remotes/") {
-		parts := strings.Split(reference.Name().Short(), "/")
-		branchName = strings.Join(parts[1:], "/")
+	referenceName := reference.Name().String()
+	if strings.HasPrefix(referenceName, "refs/remotes/") {
+		parts := strings.Split(referenceName, "/")
+		branchName = strings.Join(parts[3:], "/")
 		if config.protectedBranches.Contains(branchName) {
 			isProtected = true
 		}
-	} else if strings.HasPrefix(reference.Name().String(), "refs/heads/") {
-		branchName = reference.Name().Short()
+	} else if strings.HasPrefix(referenceName, "refs/heads/") {
+		branchName = strings.TrimPrefix(referenceName, "refs/heads/")
 		if config.protectedBranches.Contains(branchName) {
 			isProtected = true
 		}

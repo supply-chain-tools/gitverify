@@ -3,7 +3,6 @@ package gitverify
 import (
 	"encoding/hex"
 	"fmt"
-	"regexp"
 
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/supply-chain-tools/go-sandbox/hashset"
@@ -173,24 +172,14 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 		}
 
 		if exemptTag.Hash.SHA1 != nil {
-			match, err := regexp.MatchString(hexSHA1Regex, *exemptTag.Hash.SHA1)
-			if err != nil {
-				return nil, err
-			}
-
-			if !match {
+			if !HexSHA1Regex.MatchString(*exemptTag.Hash.SHA1) {
 				return nil, fmt.Errorf("SHA-1 hash for exempted tag must be 40 character hex, got %s", *exemptTag.Hash.SHA1)
 			}
 			exemptedTagMap[exemptTag.Ref] = *exemptTag.Hash.SHA1
 		}
 
 		if exemptTag.Hash.SHA512 != nil {
-			match, err := regexp.MatchString(hexSHA512Regex, *exemptTag.Hash.SHA512)
-			if err != nil {
-				return nil, err
-			}
-
-			if !match {
+			if !HexSHA512Regex.MatchString(*exemptTag.Hash.SHA512) {
 				return nil, fmt.Errorf("hash.sha512 for exempted tag must be 128 character hex, got %s", *exemptTag.Hash.SHA512)
 			}
 

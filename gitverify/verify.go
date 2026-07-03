@@ -66,7 +66,7 @@ func Verify(repo *git.Repository, state *gitkit.RepoState, repoConfig *RepoConfi
 			return err
 		}
 
-		err = validateProtectedBranches(repo, remoteSet, state, commitMetadata, repoConfig, gitHashSHA512)
+		err = validateProtectedBranches(repo, state, commitMetadata, repoConfig, gitHashSHA512)
 		if err != nil {
 			return err
 		}
@@ -99,7 +99,25 @@ func validateRefs(repo *git.Repository, state *gitkit.RepoState, repoConfig *Rep
 		referenceName := reference.Name().String()
 
 		if referenceName == "HEAD" {
-			// TODO consider checking in the future
+			switch reference.Type() {
+			case plumbing.SymbolicReference:
+				targetName := reference.Target().String()
+				if !refSet.Contains(targetName) {
+					return fmt.Errorf("symbolic reference '%s' pointed to by HEAD not found", targetName)
+				}
+
+				if targetName == "HEAD" {
+					return fmt.Errorf("HEAD is pointing to itself")
+				}
+			case plumbing.HashReference:
+				_, found := state.CommitMap[reference.Hash()]
+				if !found {
+					return fmt.Errorf("did not find commit %s pointed to by HEAD", reference.Hash().String())
+				}
+			default:
+				return fmt.Errorf("unsupported reference type %s for HEAD", reference.Type().String())
+			}
+
 			return nil
 		}
 
@@ -568,7 +586,7 @@ func isLeftDescendant(a *object.Commit, b *object.Commit, state *gitkit.RepoStat
 	}
 }
 
-func validateProtectedBranches(repo *git.Repository, remoteSet hashset.Set[string], state *gitkit.RepoState, commitMetadata map[plumbing.Hash]*CommitData, config *RepoConfig, gitHashSHA512 githash.GitHash) error {
+func validateProtectedBranches(repo *git.Repository, state *gitkit.RepoState, commitMetadata map[plumbing.Hash]*CommitData, config *RepoConfig, gitHashSHA512 githash.GitHash) error {
 	remotes, err := repo.References()
 	if err != nil {
 		return err

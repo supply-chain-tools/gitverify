@@ -276,6 +276,10 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 			return nil, err
 		}
 
+		if protectedBranches.Size() == 0 {
+			return nil, fmt.Errorf("at least one protected branch must be specified")
+		}
+
 		if parsedRules.RequireCountersigning == true && parsedRules.RequireMergeCommits == false {
 			return nil, fmt.Errorf("requireCountersigning can only be used with requireMergeCommits")
 		}

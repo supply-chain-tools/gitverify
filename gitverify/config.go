@@ -69,8 +69,6 @@ type Repository struct {
 	Rules             *Rules   `json:"rules"`
 	ProtectedBranches []string `json:"protectedBranches"`
 
-	TrustedForge *string `json:"trustedForge"`
-
 	ExemptTags []ExemptTag `json:"exemptTags"`
 }
 
@@ -535,15 +533,6 @@ func overwriteExisting(existing ParsedRules, rules *Rules) ParsedRules {
 	}
 
 	return existing
-}
-
-func combineTrustedForge(global *string, local *string) *string {
-	// FIXME not possible to remove global with local
-	if local != nil {
-		return local
-	}
-
-	return global
 }
 
 func combineProtectedBranches(global []string, local []string) (hashset.Set[string], error) {

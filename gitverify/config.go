@@ -203,7 +203,7 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 			return nil, fmt.Errorf("expected exactly one forge GPG key, got %d", len(config.ForgeIdentity.GPGPublicKeys))
 		}
 
-		if config.ForgeIdentity.GPGPublicKeys[0] != "" {
+		if config.ForgeIdentity.GPGPublicKeys[0] == "" {
 			return nil, fmt.Errorf("forge GPG key must be non-empty")
 		}
 

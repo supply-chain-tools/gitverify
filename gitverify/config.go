@@ -300,7 +300,7 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 			return nil, fmt.Errorf("requireSignedTags must be used with lockdown")
 		}
 
-		if parsedRules.Lockdown == true && parsedRules.AllowSSHSHA256 == false {
+		if parsedRules.Lockdown == true && parsedRules.AllowSSHSHA256 == true {
 			return nil, fmt.Errorf("allowSshSha256 cannot be used with lockdown")
 		}
 

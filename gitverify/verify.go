@@ -238,7 +238,12 @@ func validateCommit(commit *object.Commit, commitMetadata map[plumbing.Hash]*Com
 		return fmt.Errorf("no maintainer with email '%s' for commit %s", email, commit.Hash)
 	}
 
-	switch metadata.SignatureType {
+	signatureType, err := inferSignatureType(commit.PGPSignature)
+	if err != nil {
+		return err
+	}
+
+	switch signatureType {
 	case SignatureTypeSSH:
 		content, err := buildContent(commit)
 		if err != nil {
@@ -1003,14 +1008,7 @@ func computeCommitMetadata(state *gitkit.RepoState, repoConfig *RepoConfig, gitH
 				return nil, err
 			}
 		} else {
-			signatureType, err := inferSignatureType(commit.PGPSignature)
-			if err != nil {
-				return nil, err
-			}
-
-			commitMap[hash] = &CommitData{
-				SignatureType: signatureType,
-			}
+			commitMap[hash] = &CommitData{}
 		}
 	}
 

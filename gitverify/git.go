@@ -26,7 +26,6 @@ const (
 var sshExpectedMagicPreamble = []byte("SSHSIG")
 
 type CommitData struct {
-	SignatureType          SignatureType
 	AfterOrAncestorOfAfter bool
 	SignatureVerified      bool
 	MergeTag               *object.Tag
@@ -103,13 +102,7 @@ func ignoreCommitAndParents(commit *object.Commit, commitMap map[plumbing.Hash]*
 			queue = append(queue, parent)
 		}
 
-		signatureType, err := inferSignatureType(current.PGPSignature)
-		if err != nil {
-			return err
-		}
-
 		commitMap[current.Hash] = &CommitData{
-			SignatureType:          signatureType,
 			AfterOrAncestorOfAfter: true,
 		}
 	}

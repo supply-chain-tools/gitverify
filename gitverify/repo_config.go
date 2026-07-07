@@ -102,7 +102,7 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 		}
 
 		var forgeEmail = ""
-		if repo.Forge != nil && i.ForgeUsername != nil && i.ForgeUserId != nil {
+		if repo.TrustedForge != nil && i.ForgeUsername != nil && i.ForgeUserId != nil {
 			forgeEmail = gitHubUserEmail(*i.ForgeUserId, *i.ForgeUsername)
 
 			if allForgeEmails.Contains(forgeEmail) {
@@ -142,10 +142,10 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 	}
 
 	var f *forge
-	if repo.Forge != nil {
+	if repo.TrustedForge != nil {
 		f = &forge{
-			email:        repo.Forge.Email,
-			gpgPublicKey: repo.Forge.GPGPublicKey,
+			email:        repo.TrustedForge.Email,
+			gpgPublicKey: repo.TrustedForge.GPGPublicKey,
 		}
 	}
 

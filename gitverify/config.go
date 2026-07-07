@@ -99,7 +99,7 @@ type ParsedRepository struct {
 
 	ExemptedTags []ExemptTag
 
-	Forge *ParsedForge
+	TrustedForge *ParsedForge
 }
 
 type ParsedForge struct {
@@ -257,8 +257,13 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 			return nil, err
 		}
 
-		if parsedRules.TrustForge && forge == nil {
-			return nil, fmt.Errorf("trustForge is set, but no forgeIdentity specified")
+		var trustedForge *ParsedForge = nil
+		if parsedRules.TrustForge == true {
+			if forge == nil {
+				return nil, fmt.Errorf("trustForge is set, but no forgeIdentity specified")
+			}
+
+			trustedForge = forge
 		}
 
 		after, err := validateAfter(repo.After, parsedRules.RequireSHA512)
@@ -322,7 +327,7 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 			Rules:             parsedRules,
 			ProtectedBranches: protectedBranches,
 			ExemptedTags:      exemptTags,
-			Forge:             forge,
+			TrustedForge:      trustedForge,
 		})
 	}
 

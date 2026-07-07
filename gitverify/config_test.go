@@ -44,6 +44,7 @@ func TestConfig(t *testing.T) {
 	"trustForge": true
   },
   "trustedForge": "github.com",
+  "protectedBranches": ["main"],
   "repositories": [
     {
       "uri": "git+https://github.com/foo/bar.git",
@@ -75,7 +76,8 @@ func TestConfig(t *testing.T) {
         "requireSSHUserPresent": false,
         "requireSSHUserVerified": false,
         "trustForge": false
-      }
+      },
+      "protectedBranches": ["release"]
     }
   ]
 }
@@ -96,8 +98,8 @@ func TestConfig(t *testing.T) {
 		t.Errorf("repo0.Uri=%q, want %q", repo0.Uri, "git+https://github.com/foo/bar.git")
 	}
 
-	if repo0.Forge.Email != "noreply@github.com" {
-		t.Errorf("forgeIdentity.email=%q, want %q", repo0.Forge.Email, "github.com")
+	if repo0.TrustedForge.Email != "noreply@github.com" {
+		t.Errorf("forgeIdentity.email=%q, want %q", repo0.TrustedForge.Email, "github.com")
 	}
 
 	if *repo0.After[0].SHA1 != "0000000000000000000000000000000000000000" {
@@ -138,6 +140,14 @@ func TestConfig(t *testing.T) {
 
 	if repo0.Rules.TrustForge != true {
 		t.Errorf("repo0.Rules.TrustForge=%t, want %t", repo0.Rules.TrustForge, true)
+	}
+
+	if repo0.ProtectedBranches.Size() != 1 {
+		t.Errorf("expected exactly one protected branch, got %d", repo0.ProtectedBranches.Size())
+	}
+
+	if !repo0.ProtectedBranches.Contains("main") {
+		t.Errorf("expected exactly protected branch to be present")
 	}
 
 	repo1 := parsed.Repositories[1]
@@ -191,5 +201,17 @@ func TestConfig(t *testing.T) {
 
 	if repo1.Rules.TrustForge != false {
 		t.Errorf("repo0.Rules.TrustForge=%t, want %t", repo1.Rules.TrustForge, false)
+	}
+
+	if repo1.ProtectedBranches.Size() != 2 {
+		t.Errorf("expected exactly one protected branch, got %d", repo0.ProtectedBranches.Size())
+	}
+
+	if !repo1.ProtectedBranches.Contains("main") {
+		t.Errorf("expected exactly protected branch to be present")
+	}
+
+	if !repo1.ProtectedBranches.Contains("release") {
+		t.Errorf("expected exactly protected branch to be present")
 	}
 }

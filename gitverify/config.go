@@ -18,14 +18,13 @@ import (
 const tagRefRegex = "^refs/tags/.+$"
 
 type Config struct {
-	Type              string     `json:"_type"`
-	Identities        []Identity `json:"identities"`
-	Maintainers       []string   `json:"maintainers"`
-	Contributors      []string   `json:"contributors"`
-	Rules             *Rules     `json:"rules"`
-	ProtectedBranches []string   `json:"protectedBranches"`
-
-	TrustedForge *string `json:"trustedForge"`
+	Type              string         `json:"_type"`
+	Identities        []Identity     `json:"identities"`
+	ForgeIdentity     *ForgeIdentity `json:"forgeIdentity"`
+	Maintainers       []string       `json:"maintainers"`
+	Contributors      []string       `json:"contributors"`
+	Rules             *Rules         `json:"rules"`
+	ProtectedBranches []string       `json:"protectedBranches"`
 
 	Repositories []Repository `json:"repositories"`
 }
@@ -36,6 +35,11 @@ type Identity struct {
 	SSHPublicKeys []string `json:"sshPublicKeys"`
 	ForgeUsername *string  `json:"forgeUsername"`
 	ForgeUserId   *string  `json:"forgeUserId"`
+}
+
+type ForgeIdentity struct {
+	Email         string   `json:"email"`
+	GPGPublicKeys []string `json:"gpgPublicKeys"`
 }
 
 type Rules struct {
@@ -52,6 +56,8 @@ type Rules struct {
 
 	RequireSHA512 *bool `json:"requireSha512"`
 	Lockdown      *bool `json:"lockdown"`
+
+	TrustForge *bool `json:"trustForge"`
 }
 
 type Repository struct {
@@ -93,9 +99,14 @@ type ParsedRepository struct {
 	Rules             ParsedRules
 	ProtectedBranches hashset.Set[string]
 
-	TrustedForge *string
-
 	ExemptedTags []ExemptTag
+
+	Forge *ParsedForge
+}
+
+type ParsedForge struct {
+	Email        string
+	GPGPublicKey string
 }
 
 type ParsedRules struct {
@@ -112,6 +123,8 @@ type ParsedRules struct {
 
 	RequireSHA512 bool
 	Lockdown      bool
+
+	TrustForge bool
 }
 
 func GetConfigPath(forge string, org string) (string, error) {
@@ -180,6 +193,30 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 	allURIs := hashset.New[string]()
 	parsedRepos := make([]ParsedRepository, 0)
 
+	var forge *ParsedForge = nil
+	if config.ForgeIdentity != nil {
+		if config.ForgeIdentity.Email != gitHubEmail {
+			return nil, fmt.Errorf("the only supported forge email is %s", gitHubEmail)
+		}
+
+		if len(config.ForgeIdentity.GPGPublicKeys) != 1 {
+			return nil, fmt.Errorf("expected exactly one forge GPG key, got %d", len(config.ForgeIdentity.GPGPublicKeys))
+		}
+
+		if config.ForgeIdentity.GPGPublicKeys[0] != "" {
+			return nil, fmt.Errorf("forge GPG key must be non-empty")
+		}
+
+		forge = &ParsedForge{
+			Email:        config.ForgeIdentity.Email,
+			GPGPublicKey: config.ForgeIdentity.GPGPublicKeys[0],
+		}
+	} else {
+		if config.Rules.TrustForge != nil && *config.Rules.TrustForge {
+			return nil, fmt.Errorf("trustForge is set globally but no forgeIdentity specified ")
+		}
+	}
+
 	for _, repo := range config.Repositories {
 		uri, err := validateUri(repo.Uri)
 		if err != nil {
@@ -214,6 +251,7 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 			RequireCountersigning:  false,
 			RequireSHA512:          false,
 			Lockdown:               false,
+			TrustForge:             false,
 		}
 
 		parsedRules, err := combineRules(defaultRules, config.Rules, repo.Rules)
@@ -221,7 +259,9 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 			return nil, err
 		}
 
-		trustedForge := combineTrustedForge(config.TrustedForge, repo.TrustedForge)
+		if parsedRules.TrustForge && forge == nil {
+			return nil, fmt.Errorf("trustForge is set, but no forgeIdentity specified")
+		}
 
 		after, err := validateAfter(repo.After, parsedRules.RequireSHA512)
 		if err != nil {
@@ -242,8 +282,8 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 			return nil, fmt.Errorf("requireCountersigning can only be used with requireMergeCommits")
 		}
 
-		if parsedRules.RequireCountersigning == true && trustedForge != nil {
-			return nil, fmt.Errorf("trustedForge cannot be used with requireCountersigning")
+		if parsedRules.RequireCountersigning == true && parsedRules.TrustForge {
+			return nil, fmt.Errorf("trustForge cannot be used with requireCountersigning")
 		}
 
 		if parsedRules.RequireSHA512 == true && parsedRules.RequireCountersigning == false {
@@ -279,8 +319,8 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 			Contributors:      contributors,
 			Rules:             parsedRules,
 			ProtectedBranches: protectedBranches,
-			TrustedForge:      trustedForge,
 			ExemptedTags:      exemptTags,
+			Forge:             forge,
 		})
 	}
 
@@ -441,13 +481,13 @@ func combineContributors(global []string, local []string) (hashset.Set[string], 
 }
 
 func combineRules(defaultRules ParsedRules, global *Rules, local *Rules) (ParsedRules, error) {
-	rules := overWriteExisting(defaultRules, global)
-	rules = overWriteExisting(rules, local)
+	rules := overwriteExisting(defaultRules, global)
+	rules = overwriteExisting(rules, local)
 
 	return rules, nil
 }
 
-func overWriteExisting(existing ParsedRules, rules *Rules) ParsedRules {
+func overwriteExisting(existing ParsedRules, rules *Rules) ParsedRules {
 	if rules != nil {
 		if rules.AllowSSHSignatures != nil {
 			existing.AllowSSHSignatures = *rules.AllowSSHSignatures
@@ -487,6 +527,10 @@ func overWriteExisting(existing ParsedRules, rules *Rules) ParsedRules {
 
 		if rules.Lockdown != nil {
 			existing.Lockdown = *rules.Lockdown
+		}
+
+		if rules.TrustForge != nil {
+			existing.TrustForge = *rules.TrustForge
 		}
 	}
 

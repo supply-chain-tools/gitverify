@@ -102,7 +102,7 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 		}
 
 		var forgeEmail = ""
-		if repo.TrustedForge != nil && *repo.TrustedForge == gitHubForgeId && i.ForgeUsername != nil && i.ForgeUserId != nil {
+		if repo.Forge != nil && i.ForgeUsername != nil && i.ForgeUserId != nil {
 			forgeEmail = gitHubUserEmail(*i.ForgeUserId, *i.ForgeUsername)
 
 			if allForgeEmails.Contains(forgeEmail) {
@@ -142,14 +142,10 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 	}
 
 	var f *forge
-	if repo.TrustedForge != nil {
-		if *repo.TrustedForge == gitHubForgeId {
-			f = &forge{
-				email:        gitHubEmail,
-				gpgPublicKey: gitHubKey,
-			}
-		} else {
-			return nil, fmt.Errorf("unsupported forge: %s", *repo.TrustedForge)
+	if repo.Forge != nil {
+		f = &forge{
+			email:        repo.Forge.Email,
+			gpgPublicKey: repo.Forge.GPGPublicKey,
 		}
 	}
 
@@ -158,12 +154,12 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 	for _, exemptTag := range repo.ExemptedTags {
 		_, found := exemptedTagMap[exemptTag.Ref]
 		if found {
-			return nil, fmt.Errorf("duplicate extempted tag %s found in repository %s", exemptTag.Ref, repoUri)
+			return nil, fmt.Errorf("duplicate exempted tag %s found in repository %s", exemptTag.Ref, repoUri)
 		}
 
 		_, found = exemptedTagSHA512Map[exemptTag.Ref]
 		if found {
-			return nil, fmt.Errorf("duplicate extempted SHA-512 tag %s found in repository %s", exemptTag.Ref, repoUri)
+			return nil, fmt.Errorf("duplicate exempted SHA-512 tag %s found in repository %s", exemptTag.Ref, repoUri)
 		}
 
 		if exemptTag.Hash.SHA1 == nil && exemptTag.Hash.SHA512 == nil {

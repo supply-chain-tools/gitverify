@@ -1,13 +1,14 @@
 # Config file
 
 ### All config options
+
 ```json
 {
   "_type": "https://supply-chain-tools.github.io/schemas/gitverify/v0.2",
   "identities": [
     {
       "email": "stian.kristoffersen@telenor.no",
-      "forgeUsername" : "stiankri-telenor",
+      "forgeUsername": "stiankri-telenor",
       "forgeUserId": "155450741",
       "sshPublicKeys": [
         "sk-ssh-ed25519@openssh.com AAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29tAAAAIHa4MOkvaZbhdeWuYUFQ1sywWYkpW9x9uVTX+RlDdMvXAAAABHNzaDo="
@@ -15,13 +16,19 @@
     },
     {
       "email": "33384479+dev-bio@users.noreply.github.com",
-      "forgeUsername" : "dev-bio",
+      "forgeUsername": "dev-bio",
       "forgeUserId": "33384479",
       "sshPublicKeys": [
         "sk-ssh-ed25519@openssh.com AAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29tAAAAIDTCGpjJM/to9icZbLRiyYzz1UoPDTSbqhwLRotpWd4sAAAABHNzaDo="
       ]
     }
   ],
+  "forgeIdentity": {
+    "email": "noreply@github.com",
+    "gpgPublicKeys": [
+      "-----BEGIN PGP PUBLIC KEY BLOCK-----\n\n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\n=uMz0\n-----END PGP PUBLIC KEY BLOCK-----\n"
+    ]
+  },
   "maintainers": [
     "stian.kristoffersen@telenor.no"
   ],
@@ -36,18 +43,30 @@
     "requireSignedTags": true,
     "requireMergeCommits": true,
     "requireCountersigning": false,
-    "requireSha512": false
+    "requireSha512": false,
+    "trustForge": false
   },
-  "protectedBranches": ["main"],
+  "protectedBranches": [
+    "main"
+  ],
   "trustedForge": null,
   "repositories": [
     {
       "uri": " git+https://github.com/supply-chain-tools/gitverify.git",
-      "after": [{
+      "after": [
+        {
           "sha1": "88fc58debf5fc1e36c2e6ecf94447a084eb7aeee",
           "branch": "main"
-        }],
-      "exemptTags": [{"ref":"refs/tags/0.0.1","hash":{"sha1":"1f46f2053221c040ce5bcba0239bc09214a37658"}}]
+        }
+      ],
+      "exemptTags": [
+        {
+          "ref": "refs/tags/0.0.1",
+          "hash": {
+            "sha1": "1f46f2053221c040ce5bcba0239bc09214a37658"
+          }
+        }
+      ]
     }
   ]
 }
@@ -63,10 +82,20 @@
 | `identity.forgeUsername`    | string                  | no       | E.g. GitHub login name                                                                                                            |
 | `identity.forgeUserId`      | string                  | no       | E.g. GitHub user id                                                                                                               |
 
+### Forge Identity
+While gitverify is primarily intended to verify local signatures, it support being able to trust the signatures of a forge.
+To enable it set `forgeIdentity` and `rules.trustForge`.
+
+| Config                   | Value                   | Required | Description                             |
+|--------------------------|-------------------------|----------|-----------------------------------------|
+| `forgeIdentity`          | object                  | no       |                                         |
+| `identity.email`         | email                   | yes      | Only 'noreply@github.com' is supported. |
+| `identity.gpgPublicKeys` | list of GPG public keys | yes      | Only one GPG key is supported.          |
+
 ### Maintainers and Contributors
 Maintainers are allowed to sign any commit or tag. Contributors are not allowed to sign tags. Merge commits into
 `protectedBranches` will be verified to be from maintainers, not contributors.
-If `trustedForge` is set, then the author is verified to match `maintainers`
+If `trustForge` is set, then the author is verified to match `maintainers`
 or `contributors` following the same rules as if they made the commit themselves.
 
 The difference between `maintainers` and `contributors` might change in the future. The main goal is to allow for outside
@@ -93,12 +122,8 @@ contributions without a maintainer committing the change.
 | `rules.requireMergeCommits`    | `true` (default), `false` | no       | Require protected branches to use merge commits. Any conflicts must be resolved before merging.                                                                                                                                                                                                                                                                                                                             |
 | `rules.requireCountersigning`  | `true`, `false` (default) | no       | Require protected branches to use countersinging via mergetags. The committer and tagger must be different identities. The tree of the merge commit must be the same as the tree in the tagged commit.                                                                                                                                                                                                                      |
 | `rules.requireSha512`          | `true`, `false` (default) | no       | Require SHA-512 in countersigned commits (via `Gitverify-object-sha512: <hex>` in the mergetag, which can be created using the [pr CLI](pr.md)). SHA-512 is also required in other places like `after.sha512`, `exemptTag.hash.sha512`. **For SSH, depending on the signature algorithm, SHA-256, SHA-384, or SHA-512 is used.** GPG is currently not supported. Regular tags and commits are not affected by this setting. |
+| `rules.trustForge`             | `true`, `false` (default) | no       | Trust signatures made by `forgeIdentity`                                                                                                                                                                                                                                                                                                                                                                                    |
 
-
-### Forge
-| Config         | Value                        | Required | Description                                                                                                          |
-|----------------|------------------------------|----------|----------------------------------------------------------------------------------------------------------------------|
-| `trustedForge` | `github.com`, null (default) | no       | Allow the forge to sign commits. The author email will be used instead of the committer email when processing rules. |
 
 ### Protected branches
 Merge commits into protected branches are required to be done by a maintainer.
@@ -134,12 +159,10 @@ Generate candidates for `after`
 $ gitverify after-candidates
 ```
 
-| Per repository overrides       | Value                          | Required | Description                                 |
-|--------------------------------|--------------------------------|----------|---------------------------------------------|
-| `repository.identities`        | `identities`                   | no       | Override global `identities` section        |
-| `repository.maintainers`       | `maintainers`                  | no       | Override global `maintainers` section       |
-| `repository.contributors`      | `contributors`                 | no       | Override global `contributors` section      |
-| `repository.rules`             | `rules`                        | no       | Override global `rules` section             |
-| `repository.protectedBranches` | `protectedBranches`            | no       | Override global `protectedBranches` section |
-| `repository.trustedForge`      | `github.com`, null (default)   | no       | Override global `trustedForge`              |
+| Per repository changes to global config | Value               | Required | Description                                   |
+|-----------------------------------------|---------------------|----------|-----------------------------------------------|
+| `repository.maintainers`                | `maintainers`       | no       | Merge with global `maintainers` section       |
+| `repository.contributors`               | `contributors`      | no       | Merge with global `contributors` section      |
+| `repository.rules.*`                    | `rules.*`           | no       | Override individual global `rules.*` values   |
+| `repository.protectedBranches`          | `protectedBranches` | no       | Merge with global `protectedBranches` section |
 

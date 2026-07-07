@@ -301,14 +301,13 @@ func unwrapSshSignature(signature string) (string, error) {
 	return result, nil
 }
 
-type SSHPublicKey struct {
+type PartialSSHPublicKey struct {
 	KeyType string
 	Key     string
-	Scope   string
 }
 
-func parsePublicKey(sshSig *SSHSig) (*SSHPublicKey, error) {
-	publicKey := &SSHPublicKey{}
+func parsePublicKey(sshSig *SSHSig) (*PartialSSHPublicKey, error) {
+	publicKey := &PartialSSHPublicKey{}
 
 	err := ssh.Unmarshal([]byte(sshSig.PublicKey), publicKey)
 	if err != nil {

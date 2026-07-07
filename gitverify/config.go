@@ -40,6 +40,7 @@ type Identity struct {
 type ForgeIdentity struct {
 	Email         string   `json:"email"`
 	GPGPublicKeys []string `json:"gpgPublicKeys"`
+	SSHPublicKeys []string `json:"sshPublicKeys"`
 }
 
 type Rules struct {
@@ -104,7 +105,8 @@ type ParsedRepository struct {
 
 type ParsedForge struct {
 	Email        string
-	GPGPublicKey string
+	GPGPublicKey *string
+	SSHPublicKey *string
 }
 
 type ParsedRules struct {
@@ -193,21 +195,29 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 
 	var forge *ParsedForge = nil
 	if config.ForgeIdentity != nil {
-		if config.ForgeIdentity.Email != gitHubEmail {
-			return nil, fmt.Errorf("the only supported forge email is %s", gitHubEmail)
-		}
-
-		if len(config.ForgeIdentity.GPGPublicKeys) != 1 {
-			return nil, fmt.Errorf("expected exactly one forge GPG key, got %d", len(config.ForgeIdentity.GPGPublicKeys))
-		}
-
-		if config.ForgeIdentity.GPGPublicKeys[0] == "" {
-			return nil, fmt.Errorf("forge GPG key must be non-empty")
+		numKeys := len(config.ForgeIdentity.GPGPublicKeys) + len(config.ForgeIdentity.SSHPublicKeys)
+		if numKeys != 1 {
+			return nil, fmt.Errorf("expected exactly one forge key, got %d", numKeys)
 		}
 
 		forge = &ParsedForge{
-			Email:        config.ForgeIdentity.Email,
-			GPGPublicKey: config.ForgeIdentity.GPGPublicKeys[0],
+			Email: config.ForgeIdentity.Email,
+		}
+
+		if len(config.ForgeIdentity.GPGPublicKeys) > 0 {
+			if config.ForgeIdentity.GPGPublicKeys[0] == "" {
+				return nil, fmt.Errorf("forge GPG key must be non-empty")
+			}
+
+			forge.GPGPublicKey = &config.ForgeIdentity.GPGPublicKeys[0]
+		}
+
+		if len(config.ForgeIdentity.SSHPublicKeys) > 0 {
+			if config.ForgeIdentity.SSHPublicKeys[0] == "" {
+				return nil, fmt.Errorf("forge SSH key must be non-empty")
+			}
+
+			forge.SSHPublicKey = &config.ForgeIdentity.SSHPublicKeys[0]
 		}
 	} else {
 		if config.Rules.TrustForge != nil && *config.Rules.TrustForge {
@@ -261,6 +271,14 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 		if parsedRules.TrustForge == true {
 			if forge == nil {
 				return nil, fmt.Errorf("trustForge is set, but no forgeIdentity specified")
+			}
+
+			if forge.GPGPublicKey != nil && parsedRules.AllowGPGSignatures == false {
+				return nil, fmt.Errorf("forgeIdentity.gpgSignatures is specified, but allowGPGSignatures is false")
+			}
+
+			if forge.SSHPublicKey != nil && parsedRules.AllowSSHSignatures == false {
+				return nil, fmt.Errorf("forgeIdentity.gpgSignatures is specified, but allowSSHSignatures is false")
 			}
 
 			trustedForge = forge

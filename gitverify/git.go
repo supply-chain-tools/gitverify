@@ -41,20 +41,26 @@ func InferForgeOrgAndRepo(repo *git.Repository) (forge string, org string, repoN
 		return "", "", "", fmt.Errorf("expected exactly one remote url, got %d", len(urls))
 	}
 
-	org, repoName, err = getGitHubOrgRepo(urls[0])
+	repoUrl := urls[0]
+	forge = gitHubForgeId
+	org, repoName, err = getGitHubOrgRepo(forge, repoUrl)
 	if err != nil {
-		return "", "", "", err
+		forge = gitlabForgeId
+		org, repoName, err = getGitHubOrgRepo(forge, repoUrl)
+		if err != nil {
+			return "", "", "", err
+		}
 	}
 
-	return gitHubForgeId, org, repoName, nil
+	return forge, org, repoName, nil
 }
 
-func getGitHubOrgRepo(url string) (org string, repoName string, err error) {
-	const httpsPrefix = "https://github.com/"
-	const sshPrefix = "git@github.com:"
+func getGitHubOrgRepo(forge string, url string) (org string, repoName string, err error) {
+	httpsPrefix := fmt.Sprintf("https://%s/", forge)
+	sshPrefix := fmt.Sprintf("git@%s:", forge)
 
 	if !strings.HasPrefix(url, httpsPrefix) && !strings.HasPrefix(url, sshPrefix) {
-		return "", "", fmt.Errorf("GitHub URL does not start with 'https://github.com/' or 'git@github.com:': %s", url)
+		return "", "", fmt.Errorf("GitHub URL does not start with 'https://%s/' or 'git@%s:': %s", forge, forge, url)
 	}
 
 	var suffix string
@@ -67,12 +73,19 @@ func getGitHubOrgRepo(url string) (org string, repoName string, err error) {
 	suffix = strings.TrimSuffix(suffix, ".git")
 	parts := strings.Split(suffix, "/")
 
-	if len(parts) != 2 {
-		return "", "", fmt.Errorf("unexpected URL format: %s", url)
+	if forge == gitHubForgeId {
+		if len(parts) != 2 {
+			return "", "", fmt.Errorf("unexpected URL format: %s", url)
+		}
+	} else if forge == gitlabForgeId {
+		// TODO find limit
+		if len(parts) > 3 {
+			return "", "", fmt.Errorf("unexpected URL format: %s", url)
+		}
 	}
 
 	org = parts[0]
-	repoName = parts[1]
+	repoName = strings.Join(parts[1:], "/")
 
 	return org, repoName, nil
 }

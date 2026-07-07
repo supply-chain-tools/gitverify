@@ -46,7 +46,8 @@ type identity struct {
 
 type forge struct {
 	email        string
-	gpgPublicKey string
+	gpgPublicKey *string
+	identity     *identity
 }
 
 func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
@@ -102,7 +103,7 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 		}
 
 		var forgeEmail = ""
-		if repo.TrustedForge != nil && i.ForgeUsername != nil && i.ForgeUserId != nil {
+		if repo.TrustedForge != nil && repo.TrustedForge.Email == gitHubEmail && i.ForgeUsername != nil && i.ForgeUserId != nil {
 			forgeEmail = gitHubUserEmail(*i.ForgeUserId, *i.ForgeUsername)
 
 			if allForgeEmails.Contains(forgeEmail) {
@@ -147,6 +148,21 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 			email:        repo.TrustedForge.Email,
 			gpgPublicKey: repo.TrustedForge.GPGPublicKey,
 		}
+
+		if repo.TrustedForge.SSHPublicKey != nil {
+			sshPublicKeys := make(map[string]*ssh.PublicKey)
+			publicKey, rawKey, err := decodeAndParseSSHPublicKey(*repo.TrustedForge.SSHPublicKey)
+			if err != nil {
+				return nil, err
+			}
+
+			sshPublicKeys[string(rawKey)] = &publicKey
+			f.identity = &identity{
+				email:         repo.TrustedForge.Email,
+				sshPublicKeys: sshPublicKeys,
+			}
+		}
+
 	}
 
 	exemptedTagMap := make(map[string]string)

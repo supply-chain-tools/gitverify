@@ -38,6 +38,7 @@ func TestConfig(t *testing.T) {
   "maintainers": ["a@example.internal"],
   "contributors": ["c@example.internal"],
   "rules": {
+    "allowGPGSignatures": true,
     "allowSSHSignatures": true,
     "requireSSHUserPresent": true,
     "requireSSHUserVerified": true,
@@ -134,8 +135,8 @@ func TestConfig(t *testing.T) {
 		t.Errorf("repo0.Rules.RequireSSHUserVerified=%t, want %t", repo0.Rules.RequireSSHUserVerified, true)
 	}
 
-	if repo0.Rules.AllowGPGSignatures != false {
-		t.Errorf("repo0.Rules.AllowGPGSignatures=%t, want %t", repo0.Rules.AllowGPGSignatures, false)
+	if repo0.Rules.AllowGPGSignatures != true {
+		t.Errorf("repo0.Rules.AllowGPGSignatures=%t, want %t", repo0.Rules.AllowGPGSignatures, true)
 	}
 
 	if repo0.Rules.TrustForge != true {
@@ -195,8 +196,8 @@ func TestConfig(t *testing.T) {
 		t.Errorf("repo1.Rules.RequireSSHUserVerified=%t, want %t", repo1.Rules.RequireSSHUserVerified, false)
 	}
 
-	if repo1.Rules.AllowGPGSignatures != false {
-		t.Errorf("repo1.Rules.AllowGPGSignatures=%t, want %t", repo1.Rules.AllowGPGSignatures, false)
+	if repo1.Rules.AllowGPGSignatures != true {
+		t.Errorf("repo1.Rules.AllowGPGSignatures=%t, want %t", repo1.Rules.AllowGPGSignatures, true)
 	}
 
 	if repo1.Rules.TrustForge != false {

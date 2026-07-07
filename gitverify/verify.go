@@ -212,18 +212,50 @@ func validateCommit(commit *object.Commit, commitMetadata map[plumbing.Hash]*Com
 		return nil
 	}
 
+	signatureType, err := inferSignatureType(commit.PGPSignature)
+	if err != nil {
+		return err
+	}
+
 	email := commit.Committer.Email
 
 	if repoConfig.trustedForge != nil {
 		if repoConfig.trustedForge.email == email {
-			err := validateGPGCommit(commit, repoConfig.trustedForge.gpgPublicKey)
-			if err != nil {
-				return err
+			switch signatureType {
+			case SignatureTypeGPG:
+				key := repoConfig.trustedForge.gpgPublicKey
+				if key == nil {
+					return fmt.Errorf("wrong signature type PGP for forge commit %s", commit.Hash.String())
+				}
+
+				err := validateGPGCommit(commit, *key)
+				if err != nil {
+					return err
+				}
+			case SignatureTypeSSH:
+				id := repoConfig.trustedForge.identity
+				if id == nil {
+					return fmt.Errorf("wrong signature type SSH for forge commit %s", commit.Hash.String())
+				}
+
+				content, err := buildContent(commit)
+				if err != nil {
+					return err
+				}
+
+				err = validateSSH(content, commit.PGPSignature, *id, repoConfig)
+				if err != nil {
+					return fmt.Errorf("failed to validate commit %s: %w", commit.Hash.String(), err)
+				}
+			case SignatureTypeNone:
+				return fmt.Errorf("unsigned forge commit: %s", commit.Hash.String())
+			default:
+				return fmt.Errorf("unknown signature type for forge commit: %s", commit.Hash.String())
 			}
 
 			_, found := repoConfig.maintainerOrContributorEmails[commit.Author.Email]
 			if !found {
-				_, found := repoConfig.maintainerOrContributorForgeEmails[commit.Author.Email]
+				_, found = repoConfig.maintainerOrContributorForgeEmails[commit.Author.Email]
 				if !found {
 					return fmt.Errorf("author email '%s' not found for forge commit: %s", commit.Author.Email, commit.Hash.String())
 				}
@@ -236,11 +268,6 @@ func validateCommit(commit *object.Commit, commitMetadata map[plumbing.Hash]*Com
 	id, found := repoConfig.maintainerOrContributorEmails[email]
 	if !found {
 		return fmt.Errorf("no maintainer with email '%s' for commit %s", email, commit.Hash)
-	}
-
-	signatureType, err := inferSignatureType(commit.PGPSignature)
-	if err != nil {
-		return err
 	}
 
 	switch signatureType {

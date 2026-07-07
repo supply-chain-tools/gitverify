@@ -690,19 +690,17 @@ func validateProtectedBranch(reference *plumbing.Reference, branchName string, s
 			}
 		}
 
-		if len(current.ParentHashes) == 2 {
-			_, found := config.maintainerEmails[current.Committer.Email]
-			if !found {
-				if config.trustedForge != nil && current.Committer.Email == config.trustedForge.email {
-					_, found = config.maintainerEmails[current.Author.Email]
-					if !found {
-						_, found = config.maintainerForgeEmails[current.Author.Email]
-					}
-				}
-
+		_, found := config.maintainerEmails[current.Committer.Email]
+		if !found {
+			if config.trustedForge != nil && current.Committer.Email == config.trustedForge.email {
+				_, found = config.maintainerEmails[current.Author.Email]
 				if !found {
-					return fmt.Errorf("merge commit %s made by %s which is not a maintainer", current.Hash.String(), current.Committer.Email)
+					_, found = config.maintainerForgeEmails[current.Author.Email]
 				}
+			}
+
+			if !found {
+				return fmt.Errorf("merge commit %s made by %s which is not a maintainer", current.Hash.String(), current.Committer.Email)
 			}
 		}
 

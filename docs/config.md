@@ -122,12 +122,14 @@ contributions without a maintainer committing the change.
 | `rules.requireMergeCommits`    | `true` (default), `false` | no       | Require protected branches to use merge commits. Any conflicts must be resolved before merging.                                                                                                                                                                                                                                                                                                                             |
 | `rules.requireCountersigning`  | `true`, `false` (default) | no       | Require protected branches to use countersinging via mergetags. The committer and tagger must be different identities. The tree of the merge commit must be the same as the tree in the tagged commit.                                                                                                                                                                                                                      |
 | `rules.requireSha512`          | `true`, `false` (default) | no       | Require SHA-512 in countersigned commits (via `Gitverify-object-sha512: <hex>` in the mergetag, which can be created using the [pr CLI](pr.md)). SHA-512 is also required in other places like `after.sha512`, `exemptTag.hash.sha512`. **For SSH, depending on the signature algorithm, SHA-256, SHA-384, or SHA-512 is used.** GPG is currently not supported. Regular tags and commits are not affected by this setting. |
+| `rules.lockdown`               | `true`, `false` (default) | no       | All commits in the repository must have a valid signature from a maintainer or a contributor.                                                                                                                                                                                                                                                                                                                               |
 | `rules.trustForge`             | `true`, `false` (default) | no       | Trust signatures made by `forgeIdentity`                                                                                                                                                                                                                                                                                                                                                                                    |
 
 
 ### Protected branches
-Merge commits into protected branches are required to be done by a maintainer.
+Only maintainers can commit on a protected branch.
 When `requireMergeCommits` is set, only merge commits are allowed into the protected branch (no rebase/squash/plain commit).
+When `lockdown` is set all commits must be have valid signatures, otherwise commits being merged in are not checked.
 
 | Config              | Value                | Required | Description  |
 |---------------------|----------------------|----------|--------------|

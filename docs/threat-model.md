@@ -29,7 +29,7 @@ Teleportation attacks where the `refs/tags/<tag>` differ from the annotated tag 
 `rules.requireSignedTags: false` is set (when unsigned the attacker can manipulate both to match).
 
 ### Protected Branches
-Merge commits into protected branches are verified to be made by maintainers directly or by the forge on their behalf if
+Commits on protected branches are verified to be made by maintainers directly or by the forge on their behalf if
 `trustedForge` is set.
 
 Rules that apply to a protected branch are run for all matching local (`refs/heads/<protected branch>`) and

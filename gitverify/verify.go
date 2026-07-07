@@ -533,25 +533,25 @@ func validateCommitsRecursively(c *object.Commit, state *gitkit.RepoState, commi
 	return nil
 }
 
-func verifyConnectedToAfter(commit *object.Commit, state *gitkit.RepoState, commitMetadata map[plumbing.Hash]*CommitData, config *RepoConfig) (bool, error) {
+func verifyConnectedToAfter(commit *object.Commit, state *gitkit.RepoState, commitMetadata map[plumbing.Hash]*CommitData, config *RepoConfig) error {
 	current := commit
 	for {
 		metadata, found := commitMetadata[current.Hash]
 		if !found {
-			return false, fmt.Errorf("commit '%s' not found in commit metadata", commit.Hash.String())
+			return fmt.Errorf("commit %s not found in commit metadata", commit.Hash.String())
 		}
 
 		if metadata.AfterOrAncestorOfAfter {
-			return true, nil
+			return nil
 		}
 
 		if len(current.ParentHashes) == 0 {
-			return false, fmt.Errorf("commit '%s' is not connected to any after", commit.Hash.String())
+			return fmt.Errorf("commit %s is not connected to any after", commit.Hash.String())
 		}
 
 		current, found = state.CommitMap[current.ParentHashes[0]]
 		if !found {
-			return false, fmt.Errorf("commit '%s' not found in commit metadata", commit.Hash.String())
+			return fmt.Errorf("commit %s not found in commit metadata", commit.Hash.String())
 		}
 	}
 }
@@ -572,21 +572,20 @@ func validateBranches(repo *git.Repository, state *gitkit.RepoState, commitMetad
 			}
 		} else {
 			// FIXME
-			if branchName != "" && reference.Type() == plumbing.HashReference {
-				fmt.Printf("%s %s\n", reference.Name().String(), reference.Target().String())
+			referenceName := reference.Name().String()
+			if strings.HasPrefix(referenceName, "refs/tags/") {
+				return nil
+			}
 
+			if reference.Type() == plumbing.HashReference {
 				c, found := state.CommitMap[reference.Hash()]
 				if !found {
-					return fmt.Errorf("did not find commit %s for branch %s", reference.Hash().String(), branchName)
+					return fmt.Errorf("did not find commit %s for reference %s", reference.Hash().String(), referenceName)
 				}
 
-				connected, err := verifyConnectedToAfter(c, state, commitMetadata, config)
+				err := verifyConnectedToAfter(c, state, commitMetadata, config)
 				if err != nil {
 					return err
-				}
-
-				if !connected {
-					return fmt.Errorf("branch %s is not connected to any after", branchName)
 				}
 			}
 		}
@@ -864,33 +863,25 @@ func validateTag(tag *plumbing.Reference, state *gitkit.RepoState, repoConfig *R
 				return fmt.Errorf("commit %s missing for tag %s", t.Target.String(), tag.Hash().String())
 			}
 
-			connected, err := verifyConnectedToAfter(c, state, commitMetadata, repoConfig)
+			err = verifyConnectedToAfter(c, state, commitMetadata, repoConfig)
 			if err != nil {
 				return err
-			}
-
-			if !connected {
-				return fmt.Errorf("tag %s is not connected to any after", tag.Hash().String())
 			}
 		}
 	} else {
 		if !isExempted {
 			if repoConfig.requireSignedTags {
-				return fmt.Errorf("tag '%s' is lightweight, but signing is required", tag.Name())
+				return fmt.Errorf("tag '%s' is lightweight, but signing is required", tag.Name().String())
 			}
 
 			c, found := state.CommitMap[tag.Hash()]
 			if !found {
-				return fmt.Errorf("commit %s missing for tag %s", t.Target.String(), tag.Hash().String())
+				return fmt.Errorf("commit %s missing for tag %s", t.Target.String(), tag.Name().String())
 			}
 
-			connected, err := verifyConnectedToAfter(c, state, commitMetadata, repoConfig)
+			err := verifyConnectedToAfter(c, state, commitMetadata, repoConfig)
 			if err != nil {
 				return err
-			}
-
-			if !connected {
-				return fmt.Errorf("lightweight tag %s is not connected to any after", tag.Hash().String())
 			}
 		}
 	}

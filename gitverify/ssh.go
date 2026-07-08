@@ -39,25 +39,25 @@ func validateSSH(content string, signature string, identity identity, config *Re
 		}
 
 		if config.requireSSHUserPresent || config.requireSSHUserVerified {
-			publicKey, err := parsePublicKey(sshSig)
+			u2fSignature, err := parseU2FSignature(sshSig)
 			if err != nil {
+				format, formatErr := getSignatureFormat(sshSig)
+				if formatErr != nil {
+					return formatErr
+				}
+
+				if !(*format == ssh.KeyAlgoSKED25519 || *format == ssh.KeyAlgoECDSA256) {
+					return fmt.Errorf("unsupported public key type %s for user present/verified", *format)
+				}
+
 				return err
 			}
 
-			if !(publicKey.KeyType == "sk-ssh-ed25519@openssh.com" || publicKey.KeyType == "sk-ecdsa-sha2-nistp256@openssh.com") {
-				return fmt.Errorf("unsupported public key type %s for user present/verified", publicKey.KeyType)
-			}
-
-			signature, err := parseU2FSignature(sshSig)
-			if err != nil {
-				return err
-			}
-
-			if config.requireSSHUserPresent && !signature.userPresent() {
+			if config.requireSSHUserPresent && !u2fSignature.userPresent() {
 				return fmt.Errorf("user present missing")
 			}
 
-			if config.requireSSHUserVerified && !signature.userVerified() {
+			if config.requireSSHUserVerified && !u2fSignature.userVerified() {
 				return fmt.Errorf("user verified missing")
 			}
 		}
@@ -66,6 +66,21 @@ func validateSSH(content string, signature string, identity identity, config *Re
 	}
 
 	return nil
+}
+
+func getSignatureFormat(sshSig *SSHSig) (*string, error) {
+	sig := &ssh.Signature{}
+	err := ssh.Unmarshal([]byte(sshSig.Signature), sig)
+	if err != nil {
+		return nil, err
+	}
+
+	keyType, err := keyTypeFromSignatureFormat(sig.Format)
+	if err != nil {
+		return nil, err
+	}
+
+	return &keyType, err
 }
 
 func verifySSHSignature(key string, signature string, data string, expectedNamespace string, allowSHA256 bool, requireSHA512 bool) error {
@@ -299,22 +314,6 @@ func unwrapSshSignature(signature string) (string, error) {
 	subset := signature[subsetStart:subsetEnd]
 	result := strings.ReplaceAll(subset, "\n", "")
 	return result, nil
-}
-
-type PartialSSHPublicKey struct {
-	KeyType string
-	Key     string
-}
-
-func parsePublicKey(sshSig *SSHSig) (*PartialSSHPublicKey, error) {
-	publicKey := &PartialSSHPublicKey{}
-
-	err := ssh.Unmarshal([]byte(sshSig.PublicKey), publicKey)
-	if err != nil {
-		return nil, err
-	}
-
-	return publicKey, nil
 }
 
 type U2FSignature struct {

@@ -603,21 +603,22 @@ func validateBranches(repo *git.Repository, state *gitkit.RepoState, commitMetad
 				return err
 			}
 		} else {
-			// FIXME
-			referenceName := reference.Name().String()
-			if strings.HasPrefix(referenceName, "refs/tags/") {
-				return nil
-			}
-
-			if reference.Type() == plumbing.HashReference {
-				c, found := state.CommitMap[reference.Hash()]
-				if !found {
-					return fmt.Errorf("did not find commit %s for reference %s", reference.Hash().String(), referenceName)
+			if config.lockdown {
+				referenceName := reference.Name().String()
+				if strings.HasPrefix(referenceName, "refs/tags/") {
+					return nil
 				}
 
-				err := verifyConnectedToAfter(c, state, commitMetadata, config)
-				if err != nil {
-					return err
+				if reference.Type() == plumbing.HashReference {
+					c, found := state.CommitMap[reference.Hash()]
+					if !found {
+						return fmt.Errorf("did not find commit %s for reference %s", reference.Hash().String(), referenceName)
+					}
+
+					err := verifyConnectedToAfter(c, state, commitMetadata, config)
+					if err != nil {
+						return err
+					}
 				}
 			}
 		}

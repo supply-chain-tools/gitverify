@@ -228,7 +228,7 @@ func validateCommit(commit *object.Commit, commitMetadata map[plumbing.Hash]*Com
 					return fmt.Errorf("wrong signature type PGP for forge commit %s", commit.Hash.String())
 				}
 
-				err := validateGPGCommit(commit, *key)
+				err := validatePGPCommit(commit, *key)
 				if err != nil {
 					return err
 				}
@@ -281,7 +281,7 @@ func validateCommit(commit *object.Commit, commitMetadata map[plumbing.Hash]*Com
 			return fmt.Errorf("failed to validate commit %s: %w", commit.Hash.String(), err)
 		}
 	case SignatureTypePGP:
-		err := validateIdentityGPGCommit(commit, id, repoConfig)
+		err := validateIdentityPGPCommit(commit, id, repoConfig)
 		if err != nil {
 			return err
 		}
@@ -318,7 +318,7 @@ func validateCommit(commit *object.Commit, commitMetadata map[plumbing.Hash]*Com
 				return fmt.Errorf("failed to validate mergetag in commit %s: %w", commit.Hash.String(), err)
 			}
 		case SignatureTypePGP:
-			err := validateIdentityGPGTag(mergeTag, id, repoConfig)
+			err := validateIdentityPGPTag(mergeTag, id, repoConfig)
 			if err != nil {
 				return err
 			}
@@ -877,7 +877,7 @@ func validateTag(tag *plumbing.Reference, state *gitkit.RepoState, repoConfig *R
 					return fmt.Errorf("failed to validate tag %s: %w", t.Name, err)
 				}
 			case SignatureTypePGP:
-				err := validateIdentityGPGTag(t, id, repoConfig)
+				err := validateIdentityPGPTag(t, id, repoConfig)
 				if err != nil {
 					return err
 				}

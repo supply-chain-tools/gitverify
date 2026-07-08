@@ -8,23 +8,23 @@ import (
 	"github.com/supply-chain-tools/go-sandbox/hashset"
 )
 
-func validateIdentityGPGCommit(commit *object.Commit, id identity, config *RepoConfig) error {
+func validateIdentityPGPCommit(commit *object.Commit, id identity, config *RepoConfig) error {
 	if !config.allowPGPSignatures {
-		return fmt.Errorf("GPG signatures not allowed: %s", commit.Hash.String())
+		return fmt.Errorf("PGP signatures not allowed: %s", commit.Hash.String())
 	}
 
 	if len(id.pgpPublicKeys) < 1 {
-		return fmt.Errorf("GPG public key not found for commit %s", commit.Hash.String())
+		return fmt.Errorf("PGP public key not found for commit %s", commit.Hash.String())
 	}
 
 	if len(id.pgpPublicKeys) > 1 {
-		return fmt.Errorf("only one GPG key is currently supported got %d", len(id.pgpPublicKeys))
+		return fmt.Errorf("only one PGP key is currently supported got %d", len(id.pgpPublicKeys))
 	}
 
-	return validateGPGCommit(commit, id.pgpPublicKeys[0])
+	return validatePGPCommit(commit, id.pgpPublicKeys[0])
 }
 
-func validateGPGCommit(commit *object.Commit, key string) error {
+func validatePGPCommit(commit *object.Commit, key string) error {
 	entity, err := commit.Verify(key)
 	if err != nil {
 		return fmt.Errorf("failed to verify commit %s: %w", commit.Hash.String(), err)
@@ -42,29 +42,29 @@ func validateGPGCommit(commit *object.Commit, key string) error {
 	}
 
 	if !entityEmails.Contains(commit.Committer.Email) {
-		return fmt.Errorf("GPG key does not match committer email '%s' for commit %s", commit.Committer.Email, commit.Hash.String())
+		return fmt.Errorf("PGP key does not match committer email '%s' for commit %s", commit.Committer.Email, commit.Hash.String())
 	}
 
 	return nil
 }
 
-func validateIdentityGPGTag(tag *object.Tag, id identity, config *RepoConfig) error {
+func validateIdentityPGPTag(tag *object.Tag, id identity, config *RepoConfig) error {
 	if !config.allowPGPSignatures {
-		return fmt.Errorf("GPG signatures not allowed: %s", tag.Name)
+		return fmt.Errorf("PGP signatures not allowed: %s", tag.Name)
 	}
 
 	if len(id.pgpPublicKeys) < 1 {
-		return fmt.Errorf("GPG public key not found for tag %s", tag.Name)
+		return fmt.Errorf("PGP public key not found for tag %s", tag.Name)
 	}
 
 	if len(id.pgpPublicKeys) > 1 {
-		return fmt.Errorf("only one GPG key is currently supported got %d", len(id.pgpPublicKeys))
+		return fmt.Errorf("only one PGP key is currently supported got %d", len(id.pgpPublicKeys))
 	}
 
-	return validateGPGTag(tag, id.pgpPublicKeys[0])
+	return validatePGPTag(tag, id.pgpPublicKeys[0])
 }
 
-func validateGPGTag(tag *object.Tag, key string) error {
+func validatePGPTag(tag *object.Tag, key string) error {
 	entity, err := tag.Verify(key)
 	if err != nil {
 		return fmt.Errorf("failed to verify tag %s: %w", tag.Name, err)
@@ -82,7 +82,7 @@ func validateGPGTag(tag *object.Tag, key string) error {
 	}
 
 	if !entityEmails.Contains(tag.Tagger.Email) {
-		return fmt.Errorf("GPG key does not match tagger email '%s' for tag %s", tag.Tagger.Email, tag.Hash.String())
+		return fmt.Errorf("PGP key does not match tagger email '%s' for tag %s", tag.Tagger.Email, tag.Hash.String())
 	}
 
 	return nil

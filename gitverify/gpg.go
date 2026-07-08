@@ -9,19 +9,19 @@ import (
 )
 
 func validateIdentityGPGCommit(commit *object.Commit, id identity, config *RepoConfig) error {
-	if !config.allowGPGSignatures {
+	if !config.allowPGPSignatures {
 		return fmt.Errorf("GPG signatures not allowed: %s", commit.Hash.String())
 	}
 
-	if len(id.gpgPublicKeys) < 1 {
+	if len(id.pgpPublicKeys) < 1 {
 		return fmt.Errorf("GPG public key not found for commit %s", commit.Hash.String())
 	}
 
-	if len(id.gpgPublicKeys) > 1 {
-		return fmt.Errorf("only one GPG key is currently supported got %d", len(id.gpgPublicKeys))
+	if len(id.pgpPublicKeys) > 1 {
+		return fmt.Errorf("only one GPG key is currently supported got %d", len(id.pgpPublicKeys))
 	}
 
-	return validateGPGCommit(commit, id.gpgPublicKeys[0])
+	return validateGPGCommit(commit, id.pgpPublicKeys[0])
 }
 
 func validateGPGCommit(commit *object.Commit, key string) error {
@@ -49,19 +49,19 @@ func validateGPGCommit(commit *object.Commit, key string) error {
 }
 
 func validateIdentityGPGTag(tag *object.Tag, id identity, config *RepoConfig) error {
-	if !config.allowGPGSignatures {
+	if !config.allowPGPSignatures {
 		return fmt.Errorf("GPG signatures not allowed: %s", tag.Name)
 	}
 
-	if len(id.gpgPublicKeys) < 1 {
+	if len(id.pgpPublicKeys) < 1 {
 		return fmt.Errorf("GPG public key not found for tag %s", tag.Name)
 	}
 
-	if len(id.gpgPublicKeys) > 1 {
-		return fmt.Errorf("only one GPG key is currently supported got %d", len(id.gpgPublicKeys))
+	if len(id.pgpPublicKeys) > 1 {
+		return fmt.Errorf("only one GPG key is currently supported got %d", len(id.pgpPublicKeys))
 	}
 
-	return validateGPGTag(tag, id.gpgPublicKeys[0])
+	return validateGPGTag(tag, id.pgpPublicKeys[0])
 }
 
 func validateGPGTag(tag *object.Tag, key string) error {

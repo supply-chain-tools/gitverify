@@ -31,7 +31,7 @@ type Config struct {
 
 type Identity struct {
 	Email         string   `json:"email"`
-	GPGPublicKeys []string `json:"gpgPublicKeys"`
+	PGPPublicKeys []string `json:"pgpPublicKeys"`
 	SSHPublicKeys []string `json:"sshPublicKeys"`
 	ForgeUsername *string  `json:"forgeUsername"`
 	ForgeUserId   *string  `json:"forgeUserId"`
@@ -39,7 +39,7 @@ type Identity struct {
 
 type ForgeIdentity struct {
 	Email         string   `json:"email"`
-	GPGPublicKeys []string `json:"gpgPublicKeys"`
+	PGPPublicKeys []string `json:"pgpPublicKeys"`
 	SSHPublicKeys []string `json:"sshPublicKeys"`
 }
 
@@ -49,7 +49,7 @@ type Rules struct {
 	RequireSSHUserVerified *bool `json:"requireSshUserVerified"`
 	AllowSSHSHA256         *bool `json:"allowSshSha256"`
 
-	AllowGPGSignatures *bool `json:"allowGpgSignatures"`
+	AllowPGPSignatures *bool `json:"allowPGPSignatures"`
 
 	RequireSignedTags     *bool `json:"requireSignedTags"`
 	RequireMergeCommits   *bool `json:"requireMergeCommits"`
@@ -105,7 +105,7 @@ type ParsedRepository struct {
 
 type ParsedForge struct {
 	Email        string
-	GPGPublicKey *string
+	PGPPublicKey *string
 	SSHPublicKey *string
 }
 
@@ -115,7 +115,7 @@ type ParsedRules struct {
 	RequireSSHUserVerified bool
 	AllowSSHSHA256         bool
 
-	AllowGPGSignatures bool
+	AllowPGPSignatures bool
 
 	RequireSignedTags     bool
 	RequireMergeCommits   bool
@@ -195,7 +195,7 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 
 	var forge *ParsedForge = nil
 	if config.ForgeIdentity != nil {
-		numKeys := len(config.ForgeIdentity.GPGPublicKeys) + len(config.ForgeIdentity.SSHPublicKeys)
+		numKeys := len(config.ForgeIdentity.PGPPublicKeys) + len(config.ForgeIdentity.SSHPublicKeys)
 		if numKeys != 1 {
 			return nil, fmt.Errorf("expected exactly one forge key, got %d", numKeys)
 		}
@@ -204,12 +204,12 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 			Email: config.ForgeIdentity.Email,
 		}
 
-		if len(config.ForgeIdentity.GPGPublicKeys) > 0 {
-			if config.ForgeIdentity.GPGPublicKeys[0] == "" {
-				return nil, fmt.Errorf("forge GPG key must be non-empty")
+		if len(config.ForgeIdentity.PGPPublicKeys) > 0 {
+			if config.ForgeIdentity.PGPPublicKeys[0] == "" {
+				return nil, fmt.Errorf("forge PGP key must be non-empty")
 			}
 
-			forge.GPGPublicKey = &config.ForgeIdentity.GPGPublicKeys[0]
+			forge.PGPPublicKey = &config.ForgeIdentity.PGPPublicKeys[0]
 		}
 
 		if len(config.ForgeIdentity.SSHPublicKeys) > 0 {
@@ -253,7 +253,7 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 			RequireSSHUserPresent:  true,
 			RequireSSHUserVerified: true,
 			AllowSSHSHA256:         false,
-			AllowGPGSignatures:     false,
+			AllowPGPSignatures:     false,
 			RequireSignedTags:      true,
 			RequireMergeCommits:    true,
 			RequireCountersigning:  false,
@@ -273,12 +273,12 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 				return nil, fmt.Errorf("trustForge is set, but no forgeIdentity specified")
 			}
 
-			if forge.GPGPublicKey != nil && parsedRules.AllowGPGSignatures == false {
-				return nil, fmt.Errorf("forgeIdentity.gpgSignatures is specified, but allowGPGSignatures is false")
+			if forge.PGPPublicKey != nil && parsedRules.AllowPGPSignatures == false {
+				return nil, fmt.Errorf("forgeIdentity.pgpPublicKeys is specified, but allowPGPSignatures is false")
 			}
 
 			if forge.SSHPublicKey != nil && parsedRules.AllowSSHSignatures == false {
-				return nil, fmt.Errorf("forgeIdentity.gpgSignatures is specified, but allowSSHSignatures is false")
+				return nil, fmt.Errorf("forgeIdentity.sshPublicKeys is specified, but allowSSHSignatures is false")
 			}
 
 			trustedForge = forge
@@ -319,8 +319,8 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 			return nil, fmt.Errorf("allowSshSha256 cannot be used with requireSha512")
 		}
 
-		if parsedRules.RequireSHA512 == true && parsedRules.AllowGPGSignatures == true {
-			return nil, fmt.Errorf("requireSha512 does not currently support allowGpgSignatures")
+		if parsedRules.RequireSHA512 == true && parsedRules.AllowPGPSignatures == true {
+			return nil, fmt.Errorf("requireSha512 does not currently support allowPgpSignatures")
 		}
 
 		if parsedRules.Lockdown == true && parsedRules.RequireSignedTags == false {
@@ -530,8 +530,8 @@ func overwriteExisting(existing ParsedRules, rules *Rules) ParsedRules {
 			existing.AllowSSHSHA256 = *rules.AllowSSHSHA256
 		}
 
-		if rules.AllowGPGSignatures != nil {
-			existing.AllowGPGSignatures = *rules.AllowGPGSignatures
+		if rules.AllowPGPSignatures != nil {
+			existing.AllowPGPSignatures = *rules.AllowPGPSignatures
 		}
 
 		if rules.RequireSignedTags != nil {

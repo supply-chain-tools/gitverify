@@ -25,7 +25,7 @@ type RepoConfig struct {
 	requireSSHUserPresent              bool
 	requireSSHUserVerified             bool
 	allowSSHSHA256                     bool
-	allowGPGSignatures                 bool
+	allowPGPSignatures                 bool
 	requireSignedTags                  bool
 	requireMergeCommits                bool
 	requireCountersigning              bool
@@ -41,12 +41,12 @@ type identity struct {
 	forgeUsername *string
 	forgeUserId   *string
 	sshPublicKeys map[string]*ssh.PublicKey
-	gpgPublicKeys []string
+	pgpPublicKeys []string
 }
 
 type forge struct {
 	email        string
-	gpgPublicKey *string
+	pgpPublicKey *string
 	identity     *identity
 }
 
@@ -99,7 +99,7 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 			forgeUsername: i.ForgeUsername,
 			forgeUserId:   i.ForgeUserId,
 			sshPublicKeys: sshPublicKeys,
-			gpgPublicKeys: i.GPGPublicKeys,
+			pgpPublicKeys: i.PGPPublicKeys,
 		}
 
 		var forgeEmail = ""
@@ -146,7 +146,7 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 	if repo.TrustedForge != nil {
 		f = &forge{
 			email:        repo.TrustedForge.Email,
-			gpgPublicKey: repo.TrustedForge.GPGPublicKey,
+			pgpPublicKey: repo.TrustedForge.PGPPublicKey,
 		}
 
 		if repo.TrustedForge.SSHPublicKey != nil {
@@ -260,7 +260,7 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 		requireSSHUserPresent:              repo.Rules.RequireSSHUserPresent,
 		requireSSHUserVerified:             repo.Rules.RequireSSHUserVerified,
 		allowSSHSHA256:                     repo.Rules.AllowSSHSHA256,
-		allowGPGSignatures:                 repo.Rules.AllowGPGSignatures,
+		allowPGPSignatures:                 repo.Rules.AllowPGPSignatures,
 		requireSignedTags:                  repo.Rules.RequireSignedTags,
 		requireMergeCommits:                repo.Rules.RequireMergeCommits,
 		requireCountersigning:              repo.Rules.RequireCountersigning,

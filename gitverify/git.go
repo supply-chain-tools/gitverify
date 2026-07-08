@@ -14,7 +14,7 @@ import (
 type SignatureType string
 
 const (
-	SignatureTypeGPG         SignatureType = "gpg"
+	SignatureTypePGP         SignatureType = "pgp"
 	SignatureTypeSSH         SignatureType = "ssh"
 	SignatureTypeNone        SignatureType = "none"
 	SignatureTypeSMime       SignatureType = "smime"
@@ -127,7 +127,7 @@ func inferSignatureType(signature string) (SignatureType, error) {
 	if strings.HasPrefix(signature, "-----BEGIN SSH SIGNATURE-----") {
 		return SignatureTypeSSH, nil
 	} else if strings.HasPrefix(signature, "-----BEGIN PGP SIGNATURE-----") {
-		return SignatureTypeGPG, nil
+		return SignatureTypePGP, nil
 	} else if signature == "" {
 		return SignatureTypeNone, nil
 	} else {

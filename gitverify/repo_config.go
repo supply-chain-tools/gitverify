@@ -193,7 +193,7 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 		}
 
 		if repo.TrustedForge.SSHPublicKey != nil {
-			sshPublicKeys, err := createSSSHPublicKeyMap(repo.TrustedForge.SSHPublicKey)
+			sshPublicKeys, err := createSSSHPublicKeyMap([]string{*repo.TrustedForge.SSHPublicKey})
 			if err != nil {
 				return nil, err
 			}

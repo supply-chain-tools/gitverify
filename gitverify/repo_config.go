@@ -37,11 +37,15 @@ type RepoConfig struct {
 }
 
 type identity struct {
-	email         string
-	forgeUsername *string
-	forgeUserId   *string
-	sshPublicKeys map[string]*ssh.PublicKey
-	pgpPublicKeys []string
+	email                    string
+	forgeUsername            *string
+	forgeUserId              *string
+	sshPublicKeys            map[string]*ssh.PublicKey
+	tagSSHPublicKeys         map[string]*ssh.PublicKey
+	counterSignPublicKeys    map[string]*ssh.PublicKey
+	pgpPublicKeys            []string
+	tagPGPPublicKeys         []string
+	countersignPGPPublicKeys []string
 }
 
 type forge struct {
@@ -83,23 +87,62 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 	maintainerOrContributorForgeEmails := make(map[string]identity)
 
 	for _, i := range repo.Identities {
-		sshPublicKeys := make(map[string]*ssh.PublicKey)
-		for _, sshPublicKey := range i.SSHPublicKeys {
-			publicKey, rawKey, err := decodeAndParseSSHPublicKey(sshPublicKey)
-			if err != nil {
-				return nil, err
-			}
-
-			// TODO check for duplicates
-			sshPublicKeys[string(rawKey)] = &publicKey
+		sshPublicKeys, err := createSSSHPublicKeyMap(i.SSHPublicKeys)
+		if err != nil {
+			return nil, err
 		}
 
+		// TODO add check of PGP keys
 		identityEntry := identity{
 			email:         i.Email,
 			forgeUsername: i.ForgeUsername,
 			forgeUserId:   i.ForgeUserId,
 			sshPublicKeys: sshPublicKeys,
 			pgpPublicKeys: i.PGPPublicKeys,
+		}
+
+		tagOverride := i.Tag != nil && len(i.Tag.SSHPublicKeys)+len(i.Tag.PGPPublicKeys) > 0
+		if i.Tag != nil && len(i.Tag.SSHPublicKeys) > 0 {
+			tagPublicKeys, err := createSSSHPublicKeyMap(i.Tag.SSHPublicKeys)
+			if err != nil {
+				return nil, err
+			}
+
+			identityEntry.tagSSHPublicKeys = tagPublicKeys
+		} else {
+			if !tagOverride && !repo.Rules.RequireDedicatedTagKeys {
+				identityEntry.tagSSHPublicKeys = identityEntry.sshPublicKeys
+			}
+		}
+
+		if i.Tag != nil && len(i.Tag.PGPPublicKeys) > 0 {
+			identityEntry.tagPGPPublicKeys = i.Tag.PGPPublicKeys
+		} else {
+			if !tagOverride && !repo.Rules.RequireDedicatedTagKeys {
+				identityEntry.tagPGPPublicKeys = identityEntry.pgpPublicKeys
+			}
+		}
+
+		countersignOverride := i.Countersign != nil && len(i.Countersign.SSHPublicKeys)+len(i.Countersign.PGPPublicKeys) > 0
+		if i.Countersign != nil && len(i.Countersign.SSHPublicKeys) > 0 {
+			countersignPublicKeys, err := createSSSHPublicKeyMap(i.Countersign.SSHPublicKeys)
+			if err != nil {
+				return nil, err
+			}
+
+			identityEntry.counterSignPublicKeys = countersignPublicKeys
+		} else {
+			if !countersignOverride && !repo.Rules.RequireDedicatedCountersignKeys {
+				identityEntry.counterSignPublicKeys = identityEntry.sshPublicKeys
+			}
+		}
+
+		if i.Countersign != nil && len(i.Countersign.PGPPublicKeys) > 0 {
+			identityEntry.countersignPGPPublicKeys = i.Countersign.PGPPublicKeys
+		} else {
+			if !countersignOverride && !repo.Rules.RequireDedicatedCountersignKeys {
+				identityEntry.countersignPGPPublicKeys = identityEntry.pgpPublicKeys
+			}
 		}
 
 		var forgeEmail = ""
@@ -150,13 +193,11 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 		}
 
 		if repo.TrustedForge.SSHPublicKey != nil {
-			sshPublicKeys := make(map[string]*ssh.PublicKey)
-			publicKey, rawKey, err := decodeAndParseSSHPublicKey(*repo.TrustedForge.SSHPublicKey)
+			sshPublicKeys, err := createSSSHPublicKeyMap(repo.TrustedForge.SSHPublicKey)
 			if err != nil {
 				return nil, err
 			}
 
-			sshPublicKeys[string(rawKey)] = &publicKey
 			f.identity = &identity{
 				email:         repo.TrustedForge.Email,
 				sshPublicKeys: sshPublicKeys,
@@ -270,4 +311,19 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 		protectedBranches:                  repo.ProtectedBranches,
 		lockdown:                           repo.Rules.Lockdown,
 	}, nil
+}
+
+func createSSSHPublicKeyMap(sshPublicKeys []string) (map[string]*ssh.PublicKey, error) {
+	keyMap := make(map[string]*ssh.PublicKey)
+	for _, sshPublicKey := range sshPublicKeys {
+		publicKey, rawKey, err := decodeAndParseSSHPublicKey(sshPublicKey)
+		if err != nil {
+			return nil, err
+		}
+
+		// TODO check for duplicates
+		keyMap[string(rawKey)] = &publicKey
+	}
+
+	return keyMap, nil
 }

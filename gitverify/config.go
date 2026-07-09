@@ -30,11 +30,23 @@ type Config struct {
 }
 
 type Identity struct {
-	Email         string   `json:"email"`
+	Email         string       `json:"email"`
+	PGPPublicKeys []string     `json:"pgpPublicKeys"`
+	SSHPublicKeys []string     `json:"sshPublicKeys"`
+	ForgeUsername *string      `json:"forgeUsername"`
+	ForgeUserId   *string      `json:"forgeUserId"`
+	Tag           *Tag         `json:"tag"`
+	Countersign   *Countersign `json:"countersign"`
+}
+
+type Tag struct {
 	PGPPublicKeys []string `json:"pgpPublicKeys"`
 	SSHPublicKeys []string `json:"sshPublicKeys"`
-	ForgeUsername *string  `json:"forgeUsername"`
-	ForgeUserId   *string  `json:"forgeUserId"`
+}
+
+type Countersign struct {
+	PGPPublicKeys []string `json:"pgpPublicKeys"`
+	SSHPublicKeys []string `json:"sshPublicKeys"`
 }
 
 type ForgeIdentity struct {
@@ -59,6 +71,9 @@ type Rules struct {
 	Lockdown      *bool `json:"lockdown"`
 
 	TrustForge *bool `json:"trustForge"`
+
+	RequireDedicatedTagKeys         *bool `json:"requireDedicatedTagKeys"`
+	RequireDedicatedCountersignKeys *bool `json:"requireDedicatedCountersignKeys"`
 }
 
 type Repository struct {
@@ -125,6 +140,9 @@ type ParsedRules struct {
 	Lockdown      bool
 
 	TrustForge bool
+
+	RequireDedicatedTagKeys         bool
+	RequireDedicatedCountersignKeys bool
 }
 
 func GetConfigPath(forge string, org string) (string, error) {
@@ -249,17 +267,19 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 		}
 
 		defaultRules := ParsedRules{
-			AllowSSHSignatures:     true,
-			RequireSSHUserPresent:  false,
-			RequireSSHUserVerified: false,
-			AllowSSHSHA256:         false,
-			AllowPGPSignatures:     true,
-			RequireSignedTags:      true,
-			RequireMergeCommits:    true,
-			RequireCountersigning:  false,
-			RequireSHA512:          false,
-			Lockdown:               false,
-			TrustForge:             false,
+			AllowSSHSignatures:              true,
+			RequireSSHUserPresent:           false,
+			RequireSSHUserVerified:          false,
+			AllowSSHSHA256:                  false,
+			AllowPGPSignatures:              true,
+			RequireSignedTags:               true,
+			RequireMergeCommits:             true,
+			RequireCountersigning:           false,
+			RequireSHA512:                   false,
+			Lockdown:                        false,
+			TrustForge:                      false,
+			RequireDedicatedTagKeys:         false,
+			RequireDedicatedCountersignKeys: false,
 		}
 
 		parsedRules, err := combineRules(defaultRules, config.Rules, repo.Rules)
@@ -556,6 +576,14 @@ func overwriteExisting(existing ParsedRules, rules *Rules) ParsedRules {
 
 		if rules.TrustForge != nil {
 			existing.TrustForge = *rules.TrustForge
+		}
+
+		if rules.RequireDedicatedTagKeys != nil {
+			existing.RequireDedicatedTagKeys = *rules.RequireDedicatedTagKeys
+		}
+
+		if rules.RequireDedicatedCountersignKeys != nil {
+			existing.RequireDedicatedCountersignKeys = *rules.RequireDedicatedCountersignKeys
 		}
 	}
 

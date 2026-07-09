@@ -243,7 +243,7 @@ func validateCommit(commit *object.Commit, commitMetadata map[plumbing.Hash]*Com
 					return err
 				}
 
-				err = validateSSH(content, commit.PGPSignature, *id, repoConfig)
+				err = validateSSH(content, commit.PGPSignature, id.sshPublicKeys, repoConfig)
 				if err != nil {
 					return fmt.Errorf("failed to validate commit %s: %w", commit.Hash.String(), err)
 				}
@@ -276,12 +276,23 @@ func validateCommit(commit *object.Commit, commitMetadata map[plumbing.Hash]*Com
 		if err != nil {
 			return err
 		}
-		err = validateSSH(content, commit.PGPSignature, id, repoConfig)
+
+		sshPublicKeys := id.sshPublicKeys
+		if commit.MergeTag != "" {
+			sshPublicKeys = id.counterSignPublicKeys
+		}
+
+		err = validateSSH(content, commit.PGPSignature, sshPublicKeys, repoConfig)
 		if err != nil {
 			return fmt.Errorf("failed to validate commit %s: %w", commit.Hash.String(), err)
 		}
 	case SignatureTypePGP:
-		err := validateIdentityPGPCommit(commit, id, repoConfig)
+		pgpPublicKeys := id.pgpPublicKeys
+		if commit.MergeTag != "" {
+			pgpPublicKeys = id.countersignPGPPublicKeys
+		}
+
+		err := validateIdentityPGPCommit(commit, pgpPublicKeys, repoConfig)
 		if err != nil {
 			return err
 		}
@@ -313,12 +324,12 @@ func validateCommit(commit *object.Commit, commitMetadata map[plumbing.Hash]*Com
 			if err != nil {
 				return err
 			}
-			err = validateSSH(content, mergeTag.PGPSignature, id, repoConfig)
+			err = validateSSH(content, mergeTag.PGPSignature, id.tagSSHPublicKeys, repoConfig)
 			if err != nil {
 				return fmt.Errorf("failed to validate mergetag in commit %s: %w", commit.Hash.String(), err)
 			}
 		case SignatureTypePGP:
-			err := validateIdentityPGPTag(mergeTag, id, repoConfig)
+			err := validateIdentityPGPTag(mergeTag, id.tagPGPPublicKeys, repoConfig)
 			if err != nil {
 				return err
 			}
@@ -872,12 +883,12 @@ func validateTag(tag *plumbing.Reference, state *gitkit.RepoState, repoConfig *R
 				if err != nil {
 					return err
 				}
-				err = validateSSH(content, t.PGPSignature, id, repoConfig)
+				err = validateSSH(content, t.PGPSignature, id.tagSSHPublicKeys, repoConfig)
 				if err != nil {
 					return fmt.Errorf("failed to validate tag %s: %w", t.Name, err)
 				}
 			case SignatureTypePGP:
-				err := validateIdentityPGPTag(t, id, repoConfig)
+				err := validateIdentityPGPTag(t, id.tagPGPPublicKeys, repoConfig)
 				if err != nil {
 					return err
 				}

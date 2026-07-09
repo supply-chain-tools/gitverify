@@ -21,7 +21,7 @@ type SSHSig struct {
 	Signature     string
 }
 
-func validateSSH(content string, signature string, identity identity, config *RepoConfig) error {
+func validateSSH(content string, signature string, sshPublicKeys map[string]*ssh.PublicKey, config *RepoConfig) error {
 	if !config.allowSSHSignatures {
 		return fmt.Errorf("SSH signatures not allowed")
 	}
@@ -31,7 +31,7 @@ func validateSSH(content string, signature string, identity identity, config *Re
 		return err
 	}
 
-	trustedKey, found := identity.sshPublicKeys[sshSig.PublicKey]
+	trustedKey, found := sshPublicKeys[sshSig.PublicKey]
 	if found {
 		err = verifySignature(*trustedKey, content, sshSig, sshExpectedNamespace, config.allowSSHSHA256, config.requireSHA512)
 		if err != nil {
@@ -62,7 +62,7 @@ func validateSSH(content string, signature string, identity identity, config *Re
 			}
 		}
 	} else {
-		return fmt.Errorf("matching SSH key not found for '%s'", identity.email)
+		return fmt.Errorf("matching SSH key not found")
 	}
 
 	return nil

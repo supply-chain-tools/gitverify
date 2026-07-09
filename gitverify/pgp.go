@@ -8,20 +8,20 @@ import (
 	"github.com/supply-chain-tools/go-sandbox/hashset"
 )
 
-func validateIdentityPGPCommit(commit *object.Commit, id identity, config *RepoConfig) error {
+func validateIdentityPGPCommit(commit *object.Commit, pgpPublicKeys []string, config *RepoConfig) error {
 	if !config.allowPGPSignatures {
 		return fmt.Errorf("PGP signatures not allowed: %s", commit.Hash.String())
 	}
 
-	if len(id.pgpPublicKeys) < 1 {
+	if len(pgpPublicKeys) < 1 {
 		return fmt.Errorf("PGP public key not found for commit %s", commit.Hash.String())
 	}
 
-	if len(id.pgpPublicKeys) > 1 {
-		return fmt.Errorf("only one PGP key is currently supported got %d", len(id.pgpPublicKeys))
+	if len(pgpPublicKeys) > 1 {
+		return fmt.Errorf("only one PGP key is currently supported got %d", len(pgpPublicKeys))
 	}
 
-	return validatePGPCommit(commit, id.pgpPublicKeys[0])
+	return validatePGPCommit(commit, pgpPublicKeys[0])
 }
 
 func validatePGPCommit(commit *object.Commit, key string) error {
@@ -48,20 +48,20 @@ func validatePGPCommit(commit *object.Commit, key string) error {
 	return nil
 }
 
-func validateIdentityPGPTag(tag *object.Tag, id identity, config *RepoConfig) error {
+func validateIdentityPGPTag(tag *object.Tag, pgpPublicKeys []string, config *RepoConfig) error {
 	if !config.allowPGPSignatures {
 		return fmt.Errorf("PGP signatures not allowed: %s", tag.Name)
 	}
 
-	if len(id.pgpPublicKeys) < 1 {
+	if len(pgpPublicKeys) < 1 {
 		return fmt.Errorf("PGP public key not found for tag %s", tag.Name)
 	}
 
-	if len(id.pgpPublicKeys) > 1 {
-		return fmt.Errorf("only one PGP key is currently supported got %d", len(id.pgpPublicKeys))
+	if len(pgpPublicKeys) > 1 {
+		return fmt.Errorf("only one PGP key is currently supported got %d", len(pgpPublicKeys))
 	}
 
-	return validatePGPTag(tag, id.pgpPublicKeys[0])
+	return validatePGPTag(tag, pgpPublicKeys[0])
 }
 
 func validatePGPTag(tag *object.Tag, key string) error {

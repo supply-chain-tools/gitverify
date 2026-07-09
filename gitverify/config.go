@@ -249,11 +249,11 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 		}
 
 		defaultRules := ParsedRules{
-			AllowSSHSignatures:     false,
-			RequireSSHUserPresent:  true,
-			RequireSSHUserVerified: true,
+			AllowSSHSignatures:     true,
+			RequireSSHUserPresent:  false,
+			RequireSSHUserVerified: false,
 			AllowSSHSHA256:         false,
-			AllowPGPSignatures:     false,
+			AllowPGPSignatures:     true,
 			RequireSignedTags:      true,
 			RequireMergeCommits:    true,
 			RequireCountersigning:  false,

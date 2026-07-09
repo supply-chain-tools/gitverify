@@ -279,7 +279,7 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 			Lockdown:                        false,
 			TrustForge:                      false,
 			RequireDedicatedTagKeys:         false,
-			RequireDedicatedCountersignKeys: false,
+			RequireDedicatedCountersignKeys: true,
 		}
 
 		parsedRules, err := combineRules(defaultRules, config.Rules, repo.Rules)

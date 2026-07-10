@@ -195,7 +195,7 @@ type VerifyOptions struct {
 
 func parseVerifyOptions(osArgs []string) (*VerifyOptions, error) {
 	flags := flag.NewFlagSet("all", flag.ExitOnError)
-	var help, h, debugMode, verifyOnHEAD, verifyOnTip, localState, version bool
+	var help, h, debugMode, verifyAtHEAD, verifyAtTip, localState, version, onlyVerifyFirstSignature bool
 	var configFilePath, repoUri, commit, tag, branch string
 	flags.BoolVar(&help, "help", false, "")
 	flags.BoolVar(&h, "h", false, "")
@@ -209,8 +209,9 @@ func parseVerifyOptions(osArgs []string) (*VerifyOptions, error) {
 	flags.StringVar(&commit, "commit", "", "")
 	flags.StringVar(&tag, "tag", "", "")
 	flags.StringVar(&branch, "branch", "", "")
-	flags.BoolVar(&verifyOnHEAD, "verify-at-head", true, "")
-	flags.BoolVar(&verifyOnTip, "verify-at-tip", false, "")
+	flags.BoolVar(&verifyAtHEAD, "verify-at-head", true, "")
+	flags.BoolVar(&verifyAtTip, "verify-at-tip", false, "")
+	flags.BoolVar(&onlyVerifyFirstSignature, "only-verify-first-signature", false, "")
 
 	args := osArgs[1:]
 	if len(osArgs) > 2 && !strings.HasPrefix(osArgs[1], "-") {
@@ -243,32 +244,25 @@ func parseVerifyOptions(osArgs []string) (*VerifyOptions, error) {
 		return nil, err
 	}
 
-	if tag != "" && commit == "" {
-		return nil, fmt.Errorf("when using --tag, --commit must be specified")
-	}
-
 	if branch != "" && commit == "" {
 		return nil, fmt.Errorf("when using --branch, --commit must be specified")
 	}
 
-	if commit != "" && tag == "" && branch == "" {
-		return nil, fmt.Errorf("when using --commit, --branch or --tag must be specified")
-	}
-
-	if verifyOnTip && commit == "" {
+	if verifyAtTip && commit == "" {
 		return nil, fmt.Errorf("when using --verify-at-tip, --commit must be specified")
 	}
 
-	if verifyOnTip && branch == "" {
+	if verifyAtTip && branch == "" {
 		return nil, fmt.Errorf("when using --verify-at-tip, --branch must be specified")
 	}
 
 	validateOptions := &gitverify.ValidateOptions{
-		Commit:       commit,
-		Tag:          tag,
-		Branch:       branch,
-		VerifyOnHEAD: verifyOnHEAD,
-		VerifyOnTip:  verifyOnTip,
+		Commit:                   commit,
+		Tag:                      tag,
+		Branch:                   branch,
+		VerifyAtHEAD:             verifyAtHEAD,
+		VerifyAtTip:              verifyAtTip,
+		OnlyVerifyFirstSignature: onlyVerifyFirstSignature,
 	}
 
 	if configFilePath != "" || repoUri != "" {

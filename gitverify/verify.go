@@ -17,11 +17,12 @@ import (
 )
 
 type ValidateOptions struct {
-	Commit       string
-	Tag          string
-	Branch       string
-	VerifyOnHEAD bool
-	VerifyOnTip  bool
+	Commit                   string
+	Tag                      string
+	Branch                   string
+	VerifyAtHEAD             bool
+	VerifyAtTip              bool
+	OnlyVerifyFirstSignature bool
 }
 
 var Hex2Regex = regexp.MustCompile("^[a-f0-9]{2}$")
@@ -44,8 +45,8 @@ func Verify(repo *git.Repository, state *gitkit.RepoState, repoConfig *RepoConfi
 		return err
 	}
 
-	if opts != nil && opts.Commit != "" {
-		if !HexSHA1Regex.MatchString(opts.Commit) {
+	if opts != nil && (opts.Commit != "" || opts.Tag != "" || opts.Branch != "") {
+		if opts.Commit != "" && !HexSHA1Regex.MatchString(opts.Commit) {
 			return fmt.Errorf("target commit must be a 40 character hex, not '%s'", opts.Commit)
 		}
 
@@ -382,24 +383,6 @@ func validateOpts(opts *ValidateOptions, repo *git.Repository, state *gitkit.Rep
 
 	headHash := head.Hash()
 
-	c, found := state.CommitMap[plumbing.NewHash(opts.Commit)]
-	if !found {
-		return fmt.Errorf("target commit '%s' not found", opts.Commit)
-	}
-
-	err = validateCommitsRecursively(c, state, commitMetadata, config)
-	if err != nil {
-		return err
-	}
-
-	targetHash := c.Hash
-
-	if opts.VerifyOnHEAD {
-		if targetHash != headHash {
-			return fmt.Errorf("HEAD does not point to the target commit %s", opts.Commit)
-		}
-	}
-
 	var tagHash *plumbing.Hash = nil
 	if opts.Tag != "" {
 		tags, err := repo.Tags()
@@ -410,9 +393,11 @@ func validateOpts(opts *ValidateOptions, repo *git.Repository, state *gitkit.Rep
 		tagFound := false
 		err = tags.ForEach(func(tag *plumbing.Reference) error {
 			tagName := strings.TrimPrefix(tag.Name().String(), "refs/tags/")
-
 			if tagName == opts.Tag {
-				err := validateTag(tag, state, config, nil, gitHashSHA1, gitHashSHA512)
+				if opts.Commit == "" {
+					config.requireSignedTags = true
+				}
+				err := validateTag(tag, state, config, commitMetadata, gitHashSHA1, gitHashSHA512)
 				if err != nil {
 					return err
 				}
@@ -438,11 +423,40 @@ func validateOpts(opts *ValidateOptions, repo *git.Repository, state *gitkit.Rep
 		if !tagFound {
 			return fmt.Errorf("target tag '%s' not found", opts.Tag)
 		}
+
+		if opts.OnlyVerifyFirstSignature && opts.Commit == "" && opts.Branch == "" {
+			return nil
+		}
 	}
 
-	if tagHash != nil {
-		if targetHash != *tagHash {
-			return fmt.Errorf("target tag '%s' does not point to target commit %s ", opts.Tag, targetHash)
+	if opts.Commit == "" {
+		opts.Commit = tagHash.String()
+	}
+
+	var targetHash = plumbing.ZeroHash
+	if opts.Commit != "" {
+		c, found := state.CommitMap[plumbing.NewHash(opts.Commit)]
+		if !found {
+			return fmt.Errorf("target commit '%s' not found", opts.Commit)
+		}
+
+		err = validateCommitsRecursively(c, state, commitMetadata, config, opts)
+		if err != nil {
+			return err
+		}
+
+		targetHash = c.Hash
+
+		if opts.VerifyAtHEAD {
+			if targetHash != headHash {
+				return fmt.Errorf("HEAD does not point to the target commit %s", opts.Commit)
+			}
+		}
+
+		if tagHash != nil {
+			if targetHash != *tagHash {
+				return fmt.Errorf("target tag '%s' does not point to target commit %s ", opts.Tag, targetHash)
+			}
 		}
 	}
 
@@ -464,19 +478,25 @@ func validateOpts(opts *ValidateOptions, repo *git.Repository, state *gitkit.Rep
 					return fmt.Errorf("commit '%s' not found", reference.Hash().String())
 				}
 
-				err := validateCommitsRecursively(c, state, commitMetadata, config)
-				if err != nil {
-					return err
-				}
-
-				if isProtected {
+				if isProtected && !opts.OnlyVerifyFirstSignature {
 					err := validateProtectedBranch(reference, branchName, state, commitMetadata, config, gitHashSHA512)
 					if err != nil {
 						return fmt.Errorf("failed to validate protected branch '%s' rules: %w", reference.Name(), err)
 					}
+				} else {
+					err := validateCommitsRecursively(c, state, commitMetadata, config, opts)
+					if err != nil {
+						return err
+					}
 				}
 
-				if opts.VerifyOnTip {
+				if opts.VerifyAtHEAD {
+					if headHash != c.Hash {
+						return fmt.Errorf("HEAD does not point to the target commit %s", opts.Commit)
+					}
+				}
+
+				if opts.Commit != "" && opts.VerifyAtTip {
 					if targetHash != c.Hash {
 						return fmt.Errorf("target commit %s does not point to the tip of branch '%s'", targetHash.String(), reference.Name())
 					}
@@ -530,10 +550,19 @@ func validateOnBranch(targetHash plumbing.Hash, branchName string, c *object.Com
 	return nil
 }
 
-func validateCommitsRecursively(c *object.Commit, state *gitkit.RepoState, commitMetadata map[plumbing.Hash]*CommitData, config *RepoConfig) error {
+func validateCommitsRecursively(c *object.Commit, state *gitkit.RepoState, commitMetadata map[plumbing.Hash]*CommitData, config *RepoConfig, opts *ValidateOptions) error {
 	err := validateCommit(c, commitMetadata, config)
 	if err != nil {
 		return err
+	}
+
+	if opts.OnlyVerifyFirstSignature {
+		err = verifyConnectedToAfter(c, state, commitMetadata, config)
+		if err != nil {
+			return err
+		}
+
+		return nil
 	}
 
 	visited := hashset.New[plumbing.Hash]()

@@ -46,9 +46,9 @@ VERIFY OPTIONS
                 Verify the tag and that it points to --commit.
         --branch
                 Verify branch and ensure that --commit is on the branch.
-        --verify-on-tip
+        --verify-at-tip
                 Verify that --commit is at the tip of --branch.
-        --verify-on-head
+        --verify-at-head
                 verify that HEAD points to the --commit. On by default.
 
 AFTER-CANDIDATES OPTIONS
@@ -209,8 +209,8 @@ func parseVerifyOptions(osArgs []string) (*VerifyOptions, error) {
 	flags.StringVar(&commit, "commit", "", "")
 	flags.StringVar(&tag, "tag", "", "")
 	flags.StringVar(&branch, "branch", "", "")
-	flags.BoolVar(&verifyOnHEAD, "verify-on-head", true, "")
-	flags.BoolVar(&verifyOnTip, "verify-on-tip", false, "")
+	flags.BoolVar(&verifyOnHEAD, "verify-at-head", true, "")
+	flags.BoolVar(&verifyOnTip, "verify-at-tip", false, "")
 
 	args := osArgs[1:]
 	if len(osArgs) > 2 && !strings.HasPrefix(osArgs[1], "-") {
@@ -256,11 +256,11 @@ func parseVerifyOptions(osArgs []string) (*VerifyOptions, error) {
 	}
 
 	if verifyOnTip && commit == "" {
-		return nil, fmt.Errorf("when using --verify-on-tip, --commit must be specified")
+		return nil, fmt.Errorf("when using --verify-at-tip, --commit must be specified")
 	}
 
 	if verifyOnTip && branch == "" {
-		return nil, fmt.Errorf("when using --verify-on-tip, --branch must be specified")
+		return nil, fmt.Errorf("when using --verify-at-tip, --branch must be specified")
 	}
 
 	validateOptions := &gitverify.ValidateOptions{

@@ -87,62 +87,131 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 	maintainerOrContributorForgeEmails := make(map[string]identity)
 
 	for _, i := range repo.Identities {
-		sshPublicKeys, err := createSSSHPublicKeyMap(i.SSHPublicKeys)
+		sshCommitList := make([]string, 0)
+		sshTagList := make([]string, 0)
+		sshCountersignTagList := make([]string, 0)
+		sshCountersignCommitList := make([]string, 0)
+
+		// TODO use one map for all keys, check type before use and improve erro message
+		for _, sshKey := range i.SSHPublicKeys {
+			if sshKey.SignCommits {
+				sshCommitList = append(sshCommitList, sshKey.Key)
+			}
+
+			if sshKey.SignTags {
+				if repo.Rules.RequireDedicatedTagKeys {
+					if sshKey.SignCommits || sshKey.SignCountersignTags || sshKey.SignCountersignCommits {
+						return nil, fmt.Errorf("requireDedicatedTagKeys set, but key has other purposes")
+					}
+				}
+
+				sshTagList = append(sshTagList, sshKey.Key)
+			}
+
+			if sshKey.SignCountersignTags {
+				if repo.Rules.RequireDedicatedCountersignTagKeys {
+					if sshKey.SignCommits || sshKey.SignTags || sshKey.SignCountersignCommits {
+						return nil, fmt.Errorf("requireDedicatedCountersignTagKeys set, but key has other purposes")
+					}
+				}
+
+				sshCountersignTagList = append(sshCountersignTagList, sshKey.Key)
+			}
+
+			if sshKey.SignCountersignCommits {
+				if repo.Rules.RequireDedicatedCountersignCommitKeys {
+					if sshKey.SignCommits || sshKey.SignTags || sshKey.SignCountersignTags {
+						return nil, fmt.Errorf("requireDedicatedCountersignCommitKeys set, but key has other purposes")
+					}
+				}
+
+				sshCountersignCommitList = append(sshCountersignCommitList, sshKey.Key)
+			}
+		}
+
+		sshCommitMap, err := createSSSHPublicKeyMap(sshCommitList)
 		if err != nil {
 			return nil, err
 		}
 
+		sshTagMap, err := createSSSHPublicKeyMap(sshTagList)
+		if err != nil {
+			return nil, err
+		}
+
+		sshCountersignCommitMap, err := createSSSHPublicKeyMap(sshCountersignCommitList)
+		if err != nil {
+			return nil, err
+		}
+
+		pgpCommitList := make([]string, 0)
+		pgpTagList := make([]string, 0)
+		pgpCountersignCommitList := make([]string, 0)
+		pgpCountersignTagList := make([]string, 0)
+
 		// TODO add check of PGP keys
+		for _, pgpKey := range i.PGPPublicKeys {
+			if pgpKey.SignCommits {
+				pgpCommitList = append(pgpCommitList, pgpKey.Key)
+			}
+
+			if pgpKey.SignTags {
+				if repo.Rules.RequireDedicatedTagKeys {
+					if pgpKey.SignCommits || pgpKey.SignCountersignTags || pgpKey.SignCountersignCommits {
+						return nil, fmt.Errorf("requireDedicatedTagKeys set, but key has other purposes")
+					}
+				}
+
+				pgpTagList = append(pgpTagList, pgpKey.Key)
+			}
+
+			if pgpKey.SignCountersignTags {
+				if repo.Rules.RequireDedicatedCountersignTagKeys {
+					if pgpKey.SignCommits || pgpKey.SignTags || pgpKey.SignCountersignCommits {
+						return nil, fmt.Errorf("requireDedicatedCountersignTagKeys set, but key has other purposes")
+					}
+				}
+
+				pgpCountersignTagList = append(pgpCountersignTagList, pgpKey.Key)
+			}
+
+			if pgpKey.SignCountersignCommits {
+				if repo.Rules.RequireDedicatedCountersignCommitKeys {
+					if pgpKey.SignCommits || pgpKey.SignTags || pgpKey.SignCountersignTags {
+						return nil, fmt.Errorf("requireDedicatedCountersignCommitKeys set, but key has other purposes")
+					}
+				}
+
+				pgpCountersignCommitList = append(pgpCountersignCommitList, pgpKey.Key)
+			}
+		}
+
+		if len(pgpCommitList) > 1 {
+			return nil, fmt.Errorf("only one PGP key is supported for each signing type, got %d SignCommits", len(pgpCommitList))
+		}
+
+		if len(pgpTagList) > 1 {
+			return nil, fmt.Errorf("only one PGP key is supported for each signing type, got %d SignTags", len(pgpTagList))
+		}
+
+		if len(pgpCountersignTagList) > 1 {
+			return nil, fmt.Errorf("only one PGP key is supported for each signing type, got %d CountersignTagList", len(pgpCountersignTagList))
+		}
+
+		if len(pgpCountersignCommitList) > 1 {
+			return nil, fmt.Errorf("only one PGP key is supported for each signing type, got %d CountersignCommitList", len(pgpCountersignCommitList))
+		}
+
 		identityEntry := identity{
-			email:         i.Email,
-			forgeUsername: i.ForgeUsername,
-			forgeUserId:   i.ForgeUserId,
-			sshPublicKeys: sshPublicKeys,
-			pgpPublicKeys: i.PGPPublicKeys,
-		}
-
-		tagOverride := i.Tag != nil && len(i.Tag.SSHPublicKeys)+len(i.Tag.PGPPublicKeys) > 0
-		if i.Tag != nil && len(i.Tag.SSHPublicKeys) > 0 {
-			tagPublicKeys, err := createSSSHPublicKeyMap(i.Tag.SSHPublicKeys)
-			if err != nil {
-				return nil, err
-			}
-
-			identityEntry.tagSSHPublicKeys = tagPublicKeys
-		} else {
-			if !tagOverride && !repo.Rules.RequireDedicatedTagKeys {
-				identityEntry.tagSSHPublicKeys = identityEntry.sshPublicKeys
-			}
-		}
-
-		if i.Tag != nil && len(i.Tag.PGPPublicKeys) > 0 {
-			identityEntry.tagPGPPublicKeys = i.Tag.PGPPublicKeys
-		} else {
-			if !tagOverride && !repo.Rules.RequireDedicatedTagKeys {
-				identityEntry.tagPGPPublicKeys = identityEntry.pgpPublicKeys
-			}
-		}
-
-		countersignOverride := i.Countersign != nil && len(i.Countersign.SSHPublicKeys)+len(i.Countersign.PGPPublicKeys) > 0
-		if i.Countersign != nil && len(i.Countersign.SSHPublicKeys) > 0 {
-			countersignPublicKeys, err := createSSSHPublicKeyMap(i.Countersign.SSHPublicKeys)
-			if err != nil {
-				return nil, err
-			}
-
-			identityEntry.counterSignPublicKeys = countersignPublicKeys
-		} else {
-			if !countersignOverride && !repo.Rules.RequireDedicatedCountersignKeys {
-				identityEntry.counterSignPublicKeys = identityEntry.sshPublicKeys
-			}
-		}
-
-		if i.Countersign != nil && len(i.Countersign.PGPPublicKeys) > 0 {
-			identityEntry.countersignPGPPublicKeys = i.Countersign.PGPPublicKeys
-		} else {
-			if !countersignOverride && !repo.Rules.RequireDedicatedCountersignKeys {
-				identityEntry.countersignPGPPublicKeys = identityEntry.pgpPublicKeys
-			}
+			email:                    i.Email,
+			forgeUsername:            i.ForgeUsername,
+			forgeUserId:              i.ForgeUserId,
+			sshPublicKeys:            sshCommitMap,
+			tagSSHPublicKeys:         sshTagMap,
+			counterSignPublicKeys:    sshCountersignCommitMap,
+			pgpPublicKeys:            pgpCommitList,
+			tagPGPPublicKeys:         pgpTagList,
+			countersignPGPPublicKeys: pgpCountersignCommitList,
 		}
 
 		var forgeEmail = ""

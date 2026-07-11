@@ -30,13 +30,53 @@ type Config struct {
 }
 
 type Identity struct {
-	Email         string       `json:"email"`
-	PGPPublicKeys []string     `json:"pgpPublicKeys"`
-	SSHPublicKeys []string     `json:"sshPublicKeys"`
-	ForgeUsername *string      `json:"forgeUsername"`
-	ForgeUserId   *string      `json:"forgeUserId"`
-	Tag           *Tag         `json:"tag"`
-	Countersign   *Countersign `json:"countersign"`
+	Email         string   `json:"email"`
+	SSHPublicKeys []SSHKey `json:"sshPublicKeys"`
+	PGPPublicKeys []PGPKey `json:"pgpPublicKeys"`
+	ForgeUsername *string  `json:"forgeUsername"`
+	ForgeUserId   *string  `json:"forgeUserId"`
+}
+
+type SSHKey struct {
+	Key string `json:"key"`
+	KeyOptions
+}
+
+type PGPKey struct {
+	Key string `json:"key"`
+	KeyOptions
+}
+
+type KeyOptions struct {
+	SignCommits            *bool `json:"signCommits"`
+	SignTags               *bool `json:"signTags"`
+	SignCountersignTags    *bool `json:"signCountersignTags"`
+	SignCountersignCommits *bool `json:"signCountersignCommits"`
+}
+
+type ParsedIdentity struct {
+	Email         string
+	SSHPublicKeys []ParsedSSHKey
+	PGPPublicKeys []ParsedPGPKey
+	ForgeUsername *string
+	ForgeUserId   *string
+}
+
+type ParsedSSHKey struct {
+	Key string
+	ParsedKeyOptions
+}
+
+type ParsedPGPKey struct {
+	Key string
+	ParsedKeyOptions
+}
+
+type ParsedKeyOptions struct {
+	SignCommits            bool
+	SignTags               bool
+	SignCountersignTags    bool
+	SignCountersignCommits bool
 }
 
 type Tag struct {
@@ -72,8 +112,9 @@ type Rules struct {
 
 	TrustForge *bool `json:"trustForge"`
 
-	RequireDedicatedTagKeys         *bool `json:"requireDedicatedTagKeys"`
-	RequireDedicatedCountersignKeys *bool `json:"requireDedicatedCountersignKeys"`
+	RequireDedicatedTagKeys               *bool `json:"requireDedicatedTagKeys"`
+	RequireDedicatedCountersignTagKeys    *bool `json:"requireDedicatedCountersignTagKeys"`
+	RequireDedicatedCountersignCommitKeys *bool `json:"requireDedicatedCountersignCommitKeys"`
 }
 
 type Repository struct {
@@ -107,7 +148,7 @@ type ParsedRepository struct {
 	Uri   string
 	After []After
 
-	Identities        []Identity
+	Identities        []ParsedIdentity
 	Maintainers       hashset.Set[string]
 	Contributors      hashset.Set[string]
 	Rules             ParsedRules
@@ -141,8 +182,9 @@ type ParsedRules struct {
 
 	TrustForge bool
 
-	RequireDedicatedTagKeys         bool
-	RequireDedicatedCountersignKeys bool
+	RequireDedicatedTagKeys               bool
+	RequireDedicatedCountersignTagKeys    bool
+	RequireDedicatedCountersignCommitKeys bool
 }
 
 func GetConfigPath(forge string, org string) (string, error) {
@@ -249,7 +291,14 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 			return nil, err
 		}
 
-		identities := config.Identities
+		defaultKeyOptions := ParsedKeyOptions{
+			SignCommits:            true,
+			SignTags:               true,
+			SignCountersignTags:    true,
+			SignCountersignCommits: true,
+		}
+
+		identities := parseIdentities(config.Identities, defaultKeyOptions)
 
 		maintainers, err := combineMaintainers(config.Maintainers, repo.Maintainers)
 		if err != nil {
@@ -267,19 +316,20 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 		}
 
 		defaultRules := ParsedRules{
-			AllowSSHSignatures:              true,
-			RequireSSHUserPresent:           false,
-			RequireSSHUserVerified:          false,
-			AllowSSHSHA256:                  false,
-			AllowPGPSignatures:              true,
-			RequireSignedTags:               true,
-			RequireMergeCommits:             true,
-			RequireCountersigning:           false,
-			RequireSHA512:                   false,
-			Lockdown:                        false,
-			TrustForge:                      false,
-			RequireDedicatedTagKeys:         false,
-			RequireDedicatedCountersignKeys: true,
+			AllowSSHSignatures:                    true,
+			RequireSSHUserPresent:                 false,
+			RequireSSHUserVerified:                false,
+			AllowSSHSHA256:                        false,
+			AllowPGPSignatures:                    true,
+			RequireSignedTags:                     true,
+			RequireMergeCommits:                   true,
+			RequireCountersigning:                 false,
+			RequireSHA512:                         false,
+			Lockdown:                              false,
+			TrustForge:                            false,
+			RequireDedicatedTagKeys:               false,
+			RequireDedicatedCountersignTagKeys:    false,
+			RequireDedicatedCountersignCommitKeys: false,
 		}
 
 		parsedRules, err := combineRules(defaultRules, config.Rules, repo.Rules)
@@ -376,7 +426,61 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 	return &parsedConfig, nil
 }
 
-func ensurePresent(identities []Identity, maintainers hashset.Set[string], contributors hashset.Set[string]) error {
+func parseIdentities(identities []Identity, defaultKeyOptions ParsedKeyOptions) []ParsedIdentity {
+	result := make([]ParsedIdentity, 0)
+
+	for _, identity := range identities {
+		sshKeys := make([]ParsedSSHKey, 0)
+		for _, sshKey := range identity.SSHPublicKeys {
+			sshKeys = append(sshKeys, ParsedSSHKey{
+				Key:              sshKey.Key,
+				ParsedKeyOptions: combineKeyOptions(sshKey.KeyOptions, defaultKeyOptions),
+			})
+		}
+
+		pgpKeys := make([]ParsedPGPKey, 0)
+		for _, pgpKey := range identity.PGPPublicKeys {
+			pgpKeys = append(pgpKeys, ParsedPGPKey{
+				Key:              pgpKey.Key,
+				ParsedKeyOptions: combineKeyOptions(pgpKey.KeyOptions, defaultKeyOptions),
+			})
+		}
+
+		result = append(result, ParsedIdentity{
+			Email:         identity.Email,
+			SSHPublicKeys: sshKeys,
+			PGPPublicKeys: pgpKeys,
+			ForgeUsername: identity.ForgeUsername,
+			ForgeUserId:   identity.ForgeUserId,
+		})
+	}
+
+	return result
+}
+
+func combineKeyOptions(options KeyOptions, defaults ParsedKeyOptions) ParsedKeyOptions {
+	result := defaults
+
+	if options.SignCommits != nil {
+		result.SignCommits = *options.SignCommits
+	}
+
+	if options.SignTags != nil {
+		result.SignTags = *options.SignTags
+	}
+
+	if options.SignCountersignTags != nil {
+		result.SignCountersignTags = *options.SignCountersignTags
+	}
+
+	if options.SignCountersignCommits != nil {
+		result.SignCountersignCommits = *options.SignCountersignCommits
+	}
+
+	return result
+}
+
+func ensurePresent(identities []ParsedIdentity, maintainers hashset.Set[string], contributors hashset.Set[string]) error {
 	identityEmails := hashset.New[string]()
 
 	for _, identity := range identities {
@@ -582,8 +686,12 @@ func overwriteExisting(existing ParsedRules, rules *Rules) ParsedRules {
 			existing.RequireDedicatedTagKeys = *rules.RequireDedicatedTagKeys
 		}
 
-		if rules.RequireDedicatedCountersignKeys != nil {
-			existing.RequireDedicatedCountersignKeys = *rules.RequireDedicatedCountersignKeys
+		if rules.RequireDedicatedCountersignTagKeys != nil {
+			existing.RequireDedicatedCountersignTagKeys = *rules.RequireDedicatedCountersignTagKeys
+		}
+
+		if rules.RequireDedicatedCountersignCommitKeys != nil {
+			existing.RequireDedicatedCountersignCommitKeys = *rules.RequireDedicatedCountersignCommitKeys
 		}
 	}
 

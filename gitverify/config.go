@@ -294,8 +294,8 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 		defaultKeyOptions := ParsedKeyOptions{
 			SignCommits:            true,
 			SignTags:               true,
-			SignCountersignTags:    true,
-			SignCountersignCommits: true,
+			SignCountersignTags:    false,
+			SignCountersignCommits: false,
 		}
 
 		identities := parseIdentities(config.Identities, defaultKeyOptions)

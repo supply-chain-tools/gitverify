@@ -99,8 +99,8 @@
 | `pgpPublicKey.key`                          | GPG key                   | yes        | Only one PGP key per pupose is currently supported, standard armored string with newlines encoded as `\n`. |
 | `{ssh,pgp}PublicKey.signCommits`            | `true` (default), `false` | no         | Use key to sign all commits except countersign commits.                                                    |
 | `{ssh,pgp}PublicKey.signTags`               | `true` (default), `false` | no         | Use key to sign all tags except countersign tags.                                                          |
-| `{ssh,pgp}PublicKey.signCountersignTags`    | `true` (default), `false` | no         | Use key to sign countersign tags.                                                                          |
-| `{ssh,pgp}PublicKey.signCountersignCommits` | `true` (default), `false` | no         | Use key to sign countersign commits.                                                                       |
+| `{ssh,pgp}PublicKey.signCountersignTags`    | `true`, `false` (default) | no         | Use key to sign countersign tags.                                                                          |
+| `{ssh,pgp}PublicKey.signCountersignCommits` | `true`, `false` (default) | no         | Use key to sign countersign commits.                                                                       |
 
 ### Forge Identity
 While gitverify is primarily intended to verify local signatures, it support being able to trust the signatures of a forge.

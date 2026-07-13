@@ -408,6 +408,10 @@ func verifySha512(commitHash plumbing.Hash, targetCommitHash plumbing.Hash, mess
 	verified := false
 	for i := len(messageLines) - 1; i >= 0; i-- {
 		if strings.HasPrefix(messageLines[i], prefix) {
+			if verified {
+				return fmt.Errorf("duplicate '%s' in commit %s", prefix, commitHash.String())
+			}
+
 			hash := strings.TrimPrefix(messageLines[i], prefix)
 
 			if !HexSHA512Regex.MatchString(hash) {
@@ -419,14 +423,11 @@ func verifySha512(commitHash plumbing.Hash, targetCommitHash plumbing.Hash, mess
 				return err
 			}
 
-			if hex.EncodeToString(objectSHA512) == hash {
-				// Note that this verifies the commit the mergetag points to, including its tree, which by the
-				// check above has to point to the same tree that is in the merge commit.
-				verified = true
-				break
+			if hex.EncodeToString(objectSHA512) != hash {
+				return fmt.Errorf("wrong Gitverify-object-sha512 in merge commit %s", commitHash.String())
 			}
 
-			return fmt.Errorf("wrong Gitverify-object-sha512 in merge commit %s", commitHash.String())
+			verified = true
 		}
 	}
 
@@ -435,6 +436,62 @@ func verifySha512(commitHash plumbing.Hash, targetCommitHash plumbing.Hash, mess
 	}
 
 	return nil
+}
+
+func verifyVersionForTag(tagName string, commit *object.Commit, commitMetadata map[plumbing.Hash]*CommitData) error {
+	// FIXME
+	if strings.HasPrefix(tagName, "pr/") {
+		return nil
+	}
+
+	metadata, found := commitMetadata[commit.Hash]
+	if !found {
+		return fmt.Errorf("commit metadata for commit %s not found", commit.Hash.String())
+	}
+
+	commitLines := strings.Split(commit.Message, "\n")
+	commitVersions := extractVersions(commitLines)
+
+	if metadata.MergeTag != nil {
+		tagLines := strings.Split(metadata.MergeTag.Message, "\n")
+		tagVersions := extractVersions(tagLines)
+
+		if len(tagVersions) != 1 {
+			return fmt.Errorf("expected exactly one version for countersigned commit %s", commit.Hash.String())
+		}
+
+		if tagVersions[0] != tagName {
+			return fmt.Errorf("tag name does not match version %s", tagName)
+		}
+
+		if len(commitVersions) != 0 {
+			return fmt.Errorf("expected the version to be in the mergetag not the commit %s", commit.Hash.String())
+		}
+	} else {
+		if len(commitVersions) != 1 {
+			return fmt.Errorf("expected exactly one version in the commit %s", commit.Hash.String())
+		}
+
+		if commitVersions[0] != tagName {
+			return fmt.Errorf("tag name does not match version %s", tagName)
+		}
+	}
+
+	return nil
+}
+
+func extractVersions(messageLines []string) []string {
+	prefix := "Gitverify-version: "
+
+	versions := make([]string, 0)
+	for i := len(messageLines) - 1; i >= 0; i-- {
+		if strings.HasPrefix(messageLines[i], prefix) {
+			version := strings.TrimPrefix(messageLines[i], prefix)
+			versions = append(versions, version)
+		}
+	}
+
+	return versions
 }
 
 func extractMergeTag(commit *object.Commit) (*object.Tag, error) {
@@ -981,6 +1038,11 @@ func validateTag(tag *plumbing.Reference, state *gitkit.RepoState, repoConfig *R
 				}
 
 				err = verifyDistinctIdentities(t, c, commitMetadata, repoConfig)
+				if err != nil {
+					return err
+				}
+
+				err = verifyVersionForTag(t.Name, c, commitMetadata)
 				if err != nil {
 					return err
 				}

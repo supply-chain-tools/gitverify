@@ -195,7 +195,7 @@ type VerifyOptions struct {
 
 func parseVerifyOptions(osArgs []string) (*VerifyOptions, error) {
 	flags := flag.NewFlagSet("all", flag.ExitOnError)
-	var help, h, debugMode, verifyAtHEAD, verifyAtTip, localState, version, onlyVerifyFirstSignature bool
+	var help, h, debugMode, verifyAtHEAD, verifyAtTip, localState, version, insecurePartialVerification bool
 	var configFilePath, repoUri, commit, tag, branch string
 	flags.BoolVar(&help, "help", false, "")
 	flags.BoolVar(&h, "h", false, "")
@@ -211,7 +211,7 @@ func parseVerifyOptions(osArgs []string) (*VerifyOptions, error) {
 	flags.StringVar(&branch, "branch", "", "")
 	flags.BoolVar(&verifyAtHEAD, "verify-at-head", true, "")
 	flags.BoolVar(&verifyAtTip, "verify-at-tip", false, "")
-	flags.BoolVar(&onlyVerifyFirstSignature, "only-verify-first-signature", false, "")
+	flags.BoolVar(&insecurePartialVerification, "insecure-partial-verification", false, "")
 
 	args := osArgs[1:]
 	if len(osArgs) > 2 && !strings.HasPrefix(osArgs[1], "-") {
@@ -257,12 +257,12 @@ func parseVerifyOptions(osArgs []string) (*VerifyOptions, error) {
 	}
 
 	validateOptions := &gitverify.ValidateOptions{
-		Commit:                   commit,
-		Tag:                      tag,
-		Branch:                   branch,
-		VerifyAtHEAD:             verifyAtHEAD,
-		VerifyAtTip:              verifyAtTip,
-		OnlyVerifyFirstSignature: onlyVerifyFirstSignature,
+		Commit:                      commit,
+		Tag:                         tag,
+		Branch:                      branch,
+		VerifyAtHEAD:                verifyAtHEAD,
+		VerifyAtTip:                 verifyAtTip,
+		InsecurePartialVerification: insecurePartialVerification,
 	}
 
 	if configFilePath != "" || repoUri != "" {

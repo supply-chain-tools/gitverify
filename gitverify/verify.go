@@ -17,12 +17,12 @@ import (
 )
 
 type ValidateOptions struct {
-	Commit                   string
-	Tag                      string
-	Branch                   string
-	VerifyAtHEAD             bool
-	VerifyAtTip              bool
-	OnlyVerifyFirstSignature bool
+	Commit                      string
+	Tag                         string
+	Branch                      string
+	VerifyAtHEAD                bool
+	VerifyAtTip                 bool
+	InsecurePartialVerification bool
 }
 
 var Hex2Regex = regexp.MustCompile("^[a-f0-9]{2}$")
@@ -55,9 +55,14 @@ func Verify(repo *git.Repository, state *gitkit.RepoState, repoConfig *RepoConfi
 			return err
 		}
 	} else {
-		if repoConfig.lockdown {
+		if repoConfig.verifyAllCommits {
 			for _, commit := range state.CommitMap {
 				err := validateCommit(commit, commitMetadata, repoConfig)
+				if err != nil {
+					return err
+				}
+
+				err = verifyConnectedToAfter(commit, state, commitMetadata)
 				if err != nil {
 					return err
 				}
@@ -409,7 +414,7 @@ func validateOpts(opts *ValidateOptions, repo *git.Repository, state *gitkit.Rep
 				if opts.Commit == "" {
 					config.requireSignedTags = true
 				}
-				err := validateTag(tag, state, config, commitMetadata, gitHashSHA1, gitHashSHA512, !opts.OnlyVerifyFirstSignature)
+				err := validateTag(tag, state, config, commitMetadata, gitHashSHA1, gitHashSHA512, !opts.InsecurePartialVerification)
 				if err != nil {
 					return err
 				}
@@ -436,7 +441,7 @@ func validateOpts(opts *ValidateOptions, repo *git.Repository, state *gitkit.Rep
 			return fmt.Errorf("target tag '%s' not found", opts.Tag)
 		}
 
-		if opts.OnlyVerifyFirstSignature && opts.Commit == "" && opts.Branch == "" {
+		if opts.InsecurePartialVerification && opts.Commit == "" && opts.Branch == "" {
 			return nil
 		}
 	}
@@ -490,7 +495,7 @@ func validateOpts(opts *ValidateOptions, repo *git.Repository, state *gitkit.Rep
 					return fmt.Errorf("commit '%s' not found", reference.Hash().String())
 				}
 
-				if isProtected && !opts.OnlyVerifyFirstSignature {
+				if isProtected && !opts.InsecurePartialVerification {
 					err := validateProtectedBranch(reference, branchName, state, commitMetadata, config, gitHashSHA512)
 					if err != nil {
 						return fmt.Errorf("failed to validate protected branch '%s' rules: %w", reference.Name(), err)
@@ -568,8 +573,8 @@ func validateCommitsRecursively(c *object.Commit, state *gitkit.RepoState, commi
 		return err
 	}
 
-	if opts.OnlyVerifyFirstSignature {
-		err = verifyConnectedToAfter(c, state, commitMetadata, config)
+	if opts.InsecurePartialVerification {
+		err = verifyConnectedToAfter(c, state, commitMetadata)
 		if err != nil {
 			return err
 		}
@@ -607,7 +612,7 @@ func validateCommitsRecursively(c *object.Commit, state *gitkit.RepoState, commi
 				}
 			}
 
-			if !config.lockdown {
+			if !config.verifyAllCommits {
 				// Only check first parent
 				break
 			}
@@ -617,7 +622,7 @@ func validateCommitsRecursively(c *object.Commit, state *gitkit.RepoState, commi
 	return nil
 }
 
-func verifyConnectedToAfter(commit *object.Commit, state *gitkit.RepoState, commitMetadata map[plumbing.Hash]*CommitData, config *RepoConfig) error {
+func verifyConnectedToAfter(commit *object.Commit, state *gitkit.RepoState, commitMetadata map[plumbing.Hash]*CommitData) error {
 	current := commit
 	for {
 		metadata, found := commitMetadata[current.Hash]
@@ -625,9 +630,13 @@ func verifyConnectedToAfter(commit *object.Commit, state *gitkit.RepoState, comm
 			return fmt.Errorf("commit %s not found in commit metadata", commit.Hash.String())
 		}
 
-		if metadata.AfterOrAncestorOfAfter {
+		if metadata.AfterOrAncestorOfAfter || metadata.ConnectedToAfter {
 			return nil
 		}
+
+		// optimistically assume that the chain will be verified
+		metadata.ConnectedToAfter = true
+		commitMetadata[current.Hash] = metadata
 
 		if len(current.ParentHashes) == 0 {
 			return fmt.Errorf("commit %s is not connected to any after", commit.Hash.String())
@@ -655,7 +664,7 @@ func validateBranches(repo *git.Repository, state *gitkit.RepoState, commitMetad
 				return err
 			}
 		} else {
-			if config.lockdown {
+			if config.verifyAllCommits {
 				referenceName := reference.Name().String()
 				if strings.HasPrefix(referenceName, "refs/tags/") {
 					return nil
@@ -667,7 +676,7 @@ func validateBranches(repo *git.Repository, state *gitkit.RepoState, commitMetad
 						return fmt.Errorf("did not find commit %s for reference %s", reference.Hash().String(), referenceName)
 					}
 
-					err := verifyConnectedToAfter(c, state, commitMetadata, config)
+					err := verifyConnectedToAfter(c, state, commitMetadata)
 					if err != nil {
 						return err
 					}
@@ -946,7 +955,7 @@ func validateTag(tag *plumbing.Reference, state *gitkit.RepoState, repoConfig *R
 				return fmt.Errorf("commit %s missing for tag %s", t.Target.String(), tag.Hash().String())
 			}
 
-			err = verifyConnectedToAfter(c, state, commitMetadata, repoConfig)
+			err = verifyConnectedToAfter(c, state, commitMetadata)
 			if err != nil {
 				return err
 			}
@@ -974,7 +983,7 @@ func validateTag(tag *plumbing.Reference, state *gitkit.RepoState, repoConfig *R
 				return fmt.Errorf("commit %s missing for tag %s", t.Target.String(), tag.Name().String())
 			}
 
-			err := verifyConnectedToAfter(c, state, commitMetadata, repoConfig)
+			err := verifyConnectedToAfter(c, state, commitMetadata)
 			if err != nil {
 				return err
 			}

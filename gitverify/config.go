@@ -107,8 +107,8 @@ type Rules struct {
 	RequireMergeCommits   *bool `json:"requireMergeCommits"`
 	RequireCountersigning *bool `json:"requireCountersigning"`
 
-	RequireSHA512 *bool `json:"requireSha512"`
-	Lockdown      *bool `json:"lockdown"`
+	RequireSHA512    *bool `json:"requireSha512"`
+	VerifyAllCommits *bool `json:"verifyAllCommits"`
 
 	TrustForge *bool `json:"trustForge"`
 
@@ -181,8 +181,8 @@ type ParsedRules struct {
 	RequireMergeCommits   bool
 	RequireCountersigning bool
 
-	RequireSHA512 bool
-	Lockdown      bool
+	RequireSHA512    bool
+	VerifyAllCommits bool
 
 	TrustForge bool
 
@@ -333,7 +333,7 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 			RequireMergeCommits:                        true,
 			RequireCountersigning:                      false,
 			RequireSHA512:                              false,
-			Lockdown:                                   false,
+			VerifyAllCommits:                           false,
 			TrustForge:                                 false,
 			RequireDedicatedTagKeys:                    false,
 			RequireDedicatedCountersignTagKeys:         false,
@@ -404,10 +404,6 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 			return nil, fmt.Errorf("requireSha512 does not currently support allowPgpSignatures")
 		}
 
-		if parsedRules.Lockdown == true && parsedRules.RequireSignedTags == false {
-			return nil, fmt.Errorf("requireSignedTags must be used with lockdown")
-		}
-
 		if parsedRules.RequireDistinctTagIdentities == true && parsedRules.RequireSignedTags == false {
 			return nil, fmt.Errorf("requireSignedTags must be used with requireDistinctTagIdentities")
 		}
@@ -417,10 +413,6 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 			parsedRules.RequireDedicatedCountersignTagKeys ||
 			parsedRules.RequireDedicatedCountersignCommitKeys) {
 			return nil, fmt.Errorf("when using countersigning, dedicated keys or distinct identities must be set")
-		}
-
-		if parsedRules.Lockdown == true && parsedRules.AllowSSHSHA256 == true {
-			return nil, fmt.Errorf("allowSshSha256 cannot be used with lockdown")
 		}
 
 		if allURIs.Contains(uri) {
@@ -696,8 +688,8 @@ func overwriteExisting(existing ParsedRules, rules *Rules) ParsedRules {
 			existing.RequireSHA512 = *rules.RequireSHA512
 		}
 
-		if rules.Lockdown != nil {
-			existing.Lockdown = *rules.Lockdown
+		if rules.VerifyAllCommits != nil {
+			existing.VerifyAllCommits = *rules.VerifyAllCommits
 		}
 
 		if rules.TrustForge != nil {

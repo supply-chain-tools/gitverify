@@ -27,6 +27,7 @@ var sshExpectedMagicPreamble = []byte("SSHSIG")
 
 type CommitData struct {
 	AfterOrAncestorOfAfter bool
+	ConnectedToAfter       bool
 	SignatureVerified      bool
 	MergeTag               *object.Tag
 }

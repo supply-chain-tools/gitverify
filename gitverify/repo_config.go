@@ -33,7 +33,7 @@ type RepoConfig struct {
 	protectedBranches                          hashset.Set[string]
 	exemptedTags                               map[string]string
 	exemptedTagsSHA512                         map[string]string
-	lockdown                                   bool
+	verifyAllCommits                           bool
 	requireDistinctTagIdentities               bool
 	requireDistinctCountersignCommitIdentities bool
 	requireDistinctCountersignTagIdentities    bool
@@ -381,7 +381,7 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 		exemptedTags:                               exemptedTagMap,
 		exemptedTagsSHA512:                         exemptedTagSHA512Map,
 		protectedBranches:                          repo.ProtectedBranches,
-		lockdown:                                   repo.Rules.Lockdown,
+		verifyAllCommits:                           repo.Rules.VerifyAllCommits,
 		requireDistinctTagIdentities:               repo.Rules.RequireDistinctTagIdentities,
 		requireDistinctCountersignTagIdentities:    repo.Rules.RequireDistinctCountersignTagIdentities,
 		requireDistinctCountersignCommitIdentities: repo.Rules.RequireDistinctCountersignCommitIdentities,

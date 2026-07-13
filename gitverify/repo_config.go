@@ -260,12 +260,15 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 	var f *forge
 	if repo.TrustedForge != nil {
 		f = &forge{
-			email:        repo.TrustedForge.Email,
-			pgpPublicKey: repo.TrustedForge.PGPPublicKey,
+			email: repo.TrustedForge.Email,
 		}
 
-		if repo.TrustedForge.SSHPublicKey != nil {
-			sshPublicKeys, err := createSSSHPublicKeyMap([]string{*repo.TrustedForge.SSHPublicKey})
+		if repo.TrustedForge.PGPPublicKey != nil && repo.TrustedForge.PGPPublicKey.SignCommits {
+			f.pgpPublicKey = &repo.TrustedForge.PGPPublicKey.Key
+		}
+
+		if repo.TrustedForge.SSHPublicKey != nil && repo.TrustedForge.SSHPublicKey.SignCommits {
+			sshPublicKeys, err := createSSSHPublicKeyMap([]string{repo.TrustedForge.SSHPublicKey.Key})
 			if err != nil {
 				return nil, err
 			}

@@ -106,11 +106,12 @@
 While gitverify is primarily intended to verify local signatures, it support being able to trust the signatures of a forge.
 To enable it set `forgeIdentity` and `rules.trustForge`.
 
-| Config                   | Value                   | Required | Description                             |
-|--------------------------|-------------------------|----------|-----------------------------------------|
-| `forgeIdentity`          | object                  | no       |                                         |
-| `identity.email`         | email                   | yes      | Only 'noreply@github.com' is supported. |
-| `identity.pgpPublicKeys` | list of PGP public keys | yes      | Only one PGP key is supported.          |
+| Config                   | Value                          | Required | Description                    |
+|--------------------------|--------------------------------|----------|--------------------------------|
+| `forgeIdentity`          | object                         | no       |                                |
+| `identity.email`         | email                          | yes      |                                |
+| `identity.pgpPublicKeys` | list of `pgpPublicKey` objects | no       | Forges can only `signCommits`. |
+| `identity.sshPublicKeys` | list of `sshPublicKey` objects | no       | Forges can only `signCommits`. |
 
 ### Maintainers and Contributors
 Maintainers are allowed to sign any commit or tag. Contributors are not allowed to sign tags. Merge commits into

@@ -91,8 +91,8 @@ type Countersign struct {
 
 type ForgeIdentity struct {
 	Email         string   `json:"email"`
-	PGPPublicKeys []string `json:"pgpPublicKeys"`
-	SSHPublicKeys []string `json:"sshPublicKeys"`
+	PGPPublicKeys []PGPKey `json:"pgpPublicKeys"`
+	SSHPublicKeys []SSHKey `json:"sshPublicKeys"`
 }
 
 type Rules struct {
@@ -165,8 +165,8 @@ type ParsedRepository struct {
 
 type ParsedForge struct {
 	Email        string
-	PGPPublicKey *string
-	SSHPublicKey *string
+	PGPPublicKey *ParsedPGPKey
+	SSHPublicKey *ParsedSSHKey
 }
 
 type ParsedRules struct {
@@ -269,23 +269,47 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 		}
 
 		forge = &ParsedForge{
+			// TODO verify email
 			Email: config.ForgeIdentity.Email,
 		}
 
+		defaultForgeKeyOptions := ParsedKeyOptions{
+			SignCommits:            true,
+			SignTags:               false,
+			SignCountersignTags:    false,
+			SignCountersignCommits: false,
+		}
+
 		if len(config.ForgeIdentity.PGPPublicKeys) > 0 {
-			if config.ForgeIdentity.PGPPublicKeys[0] == "" {
+			if config.ForgeIdentity.PGPPublicKeys[0].Key == "" {
 				return nil, fmt.Errorf("forge PGP key must be non-empty")
 			}
+			opts := combineKeyOptions(config.ForgeIdentity.PGPPublicKeys[0].KeyOptions, defaultForgeKeyOptions)
+			err := validateForgeKeyOptions(opts)
+			if err != nil {
+				return nil, err
+			}
 
-			forge.PGPPublicKey = &config.ForgeIdentity.PGPPublicKeys[0]
+			forge.PGPPublicKey = &ParsedPGPKey{
+				Key:              config.ForgeIdentity.PGPPublicKeys[0].Key,
+				ParsedKeyOptions: opts,
+			}
 		}
 
 		if len(config.ForgeIdentity.SSHPublicKeys) > 0 {
-			if config.ForgeIdentity.SSHPublicKeys[0] == "" {
+			if config.ForgeIdentity.SSHPublicKeys[0].Key == "" {
 				return nil, fmt.Errorf("forge SSH key must be non-empty")
 			}
+			opts := combineKeyOptions(config.ForgeIdentity.SSHPublicKeys[0].KeyOptions, defaultForgeKeyOptions)
+			err := validateForgeKeyOptions(opts)
+			if err != nil {
+				return nil, err
+			}
 
-			forge.SSHPublicKey = &config.ForgeIdentity.SSHPublicKeys[0]
+			forge.SSHPublicKey = &ParsedSSHKey{
+				Key:              config.ForgeIdentity.SSHPublicKeys[0].Key,
+				ParsedKeyOptions: opts,
+			}
 		}
 	} else {
 		if config.Rules.TrustForge != nil && *config.Rules.TrustForge {
@@ -438,6 +462,22 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 	}
 
 	return &parsedConfig, nil
+}
+
+func validateForgeKeyOptions(options ParsedKeyOptions) error {
+	if options.SignTags != false {
+		return fmt.Errorf("forge key cannot use signTags")
+	}
+
+	if options.SignCountersignTags != false {
+		return fmt.Errorf("forge key cannot use signCountersignTags")
+	}
+
+	if options.SignCountersignCommits != false {
+		return fmt.Errorf("forge key cannot use signCountersignCommits")
+	}
+
+	return nil
 }
 
 func parseIdentities(identities []Identity, defaultKeyOptions ParsedKeyOptions) []ParsedIdentity {

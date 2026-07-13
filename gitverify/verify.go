@@ -227,6 +227,10 @@ func validateCommit(commit *object.Commit, commitMetadata map[plumbing.Hash]*Com
 
 	if repoConfig.trustedForge != nil {
 		if repoConfig.trustedForge.email == email {
+			if commit.MergeTag != "" {
+				return fmt.Errorf("forge cannot sign countersign commits")
+			}
+
 			switch signatureType {
 			case SignatureTypePGP:
 				key := repoConfig.trustedForge.pgpPublicKey

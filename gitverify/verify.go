@@ -346,6 +346,18 @@ func validateCommit(commit *object.Commit, commitMetadata map[plumbing.Hash]*Com
 			return fmt.Errorf("commit parent does not match mergetag in commit %s", commit.Hash.String())
 		}
 
+		if repoConfig.requireDistinctCountersignTagIdentities {
+			if mergeTag.Tagger.Email == email {
+				return fmt.Errorf("requireDistinctCountersignTagIdentities is set but identity %s reused in %s", email, commit.Hash.String())
+			}
+		}
+
+		if repoConfig.requireDistinctCountersignCommitIdentities {
+			if mergeTag.Tagger.Email == email {
+				return fmt.Errorf("requireDistinctCountersignCommitIdentities is set but identity %s reused in %s", email, commit.Hash.String())
+			}
+		}
+
 		metadata.MergeTag = mergeTag
 	}
 

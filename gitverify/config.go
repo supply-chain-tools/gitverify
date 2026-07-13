@@ -115,6 +115,9 @@ type Rules struct {
 	RequireDedicatedTagKeys               *bool `json:"requireDedicatedTagKeys"`
 	RequireDedicatedCountersignTagKeys    *bool `json:"requireDedicatedCountersignTagKeys"`
 	RequireDedicatedCountersignCommitKeys *bool `json:"requireDedicatedCountersignCommitKeys"`
+
+	RequireDistinctCountersignTagsIdentities   *bool `json:"requireDistinctCountersignTagIdentities"`
+	RequireDistinctCountersignCommitIdentities *bool `json:"requireDistinctCountersignCommitIdentities"`
 }
 
 type Repository struct {
@@ -185,6 +188,9 @@ type ParsedRules struct {
 	RequireDedicatedTagKeys               bool
 	RequireDedicatedCountersignTagKeys    bool
 	RequireDedicatedCountersignCommitKeys bool
+
+	RequireDistinctCountersignTagIdentities    bool
+	RequireDistinctCountersignCommitIdentities bool
 }
 
 func GetConfigPath(forge string, org string) (string, error) {
@@ -316,20 +322,22 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 		}
 
 		defaultRules := ParsedRules{
-			AllowSSHSignatures:                    true,
-			RequireSSHUserPresent:                 false,
-			RequireSSHUserVerified:                false,
-			AllowSSHSHA256:                        false,
-			AllowPGPSignatures:                    true,
-			RequireSignedTags:                     true,
-			RequireMergeCommits:                   true,
-			RequireCountersigning:                 false,
-			RequireSHA512:                         false,
-			Lockdown:                              false,
-			TrustForge:                            false,
-			RequireDedicatedTagKeys:               false,
-			RequireDedicatedCountersignTagKeys:    false,
-			RequireDedicatedCountersignCommitKeys: false,
+			AllowSSHSignatures:                         true,
+			RequireSSHUserPresent:                      false,
+			RequireSSHUserVerified:                     false,
+			AllowSSHSHA256:                             false,
+			AllowPGPSignatures:                         true,
+			RequireSignedTags:                          true,
+			RequireMergeCommits:                        true,
+			RequireCountersigning:                      false,
+			RequireSHA512:                              false,
+			Lockdown:                                   false,
+			TrustForge:                                 false,
+			RequireDedicatedTagKeys:                    false,
+			RequireDedicatedCountersignTagKeys:         false,
+			RequireDedicatedCountersignCommitKeys:      false,
+			RequireDistinctCountersignTagIdentities:    true,
+			RequireDistinctCountersignCommitIdentities: true,
 		}
 
 		parsedRules, err := combineRules(defaultRules, config.Rules, repo.Rules)
@@ -692,6 +700,14 @@ func overwriteExisting(existing ParsedRules, rules *Rules) ParsedRules {
 
 		if rules.RequireDedicatedCountersignCommitKeys != nil {
 			existing.RequireDedicatedCountersignCommitKeys = *rules.RequireDedicatedCountersignCommitKeys
+		}
+
+		if rules.RequireDistinctCountersignTagsIdentities != nil {
+			existing.RequireDistinctCountersignTagIdentities = *rules.RequireDistinctCountersignTagsIdentities
+		}
+
+		if rules.RequireDistinctCountersignCommitIdentities != nil {
+			existing.RequireDistinctCountersignCommitIdentities = *rules.RequireDistinctCountersignCommitIdentities
 		}
 	}
 

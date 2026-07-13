@@ -10,30 +10,32 @@ import (
 )
 
 type RepoConfig struct {
-	afterSHA1                          hashset.Set[plumbing.Hash]
-	afterSHA512                        hashset.Set[[64]byte]
-	sha1ToBranch                       map[plumbing.Hash]string
-	branchToSHA1                       map[string]plumbing.Hash
-	sha512ToBranch                     map[[64]byte]string
-	afterSHA1ToSHA512                  map[plumbing.Hash][64]byte
-	maintainerEmails                   map[string]identity
-	maintainerOrContributorEmails      map[string]identity
-	maintainerForgeEmails              map[string]identity
-	maintainerOrContributorForgeEmails map[string]identity
-	trustedForge                       *forge
-	allowSSHSignatures                 bool
-	requireSSHUserPresent              bool
-	requireSSHUserVerified             bool
-	allowSSHSHA256                     bool
-	allowPGPSignatures                 bool
-	requireSignedTags                  bool
-	requireMergeCommits                bool
-	requireCountersigning              bool
-	requireSHA512                      bool
-	protectedBranches                  hashset.Set[string]
-	exemptedTags                       map[string]string
-	exemptedTagsSHA512                 map[string]string
-	lockdown                           bool
+	afterSHA1                                  hashset.Set[plumbing.Hash]
+	afterSHA512                                hashset.Set[[64]byte]
+	sha1ToBranch                               map[plumbing.Hash]string
+	branchToSHA1                               map[string]plumbing.Hash
+	sha512ToBranch                             map[[64]byte]string
+	afterSHA1ToSHA512                          map[plumbing.Hash][64]byte
+	maintainerEmails                           map[string]identity
+	maintainerOrContributorEmails              map[string]identity
+	maintainerForgeEmails                      map[string]identity
+	maintainerOrContributorForgeEmails         map[string]identity
+	trustedForge                               *forge
+	allowSSHSignatures                         bool
+	requireSSHUserPresent                      bool
+	requireSSHUserVerified                     bool
+	allowSSHSHA256                             bool
+	allowPGPSignatures                         bool
+	requireSignedTags                          bool
+	requireMergeCommits                        bool
+	requireCountersigning                      bool
+	requireSHA512                              bool
+	protectedBranches                          hashset.Set[string]
+	exemptedTags                               map[string]string
+	exemptedTagsSHA512                         map[string]string
+	lockdown                                   bool
+	requireDistinctCountersignCommitIdentities bool
+	requireDistinctCountersignTagIdentities    bool
 }
 
 type identity struct {
@@ -355,30 +357,32 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 	}
 
 	return &RepoConfig{
-		afterSHA1:                          afterSHA1,
-		afterSHA512:                        afterSHA512,
-		sha1ToBranch:                       sha1ToBranch,
-		branchToSHA1:                       branchToSHA1,
-		sha512ToBranch:                     sha512ToBranch,
-		afterSHA1ToSHA512:                  afterSHA1ToSHA512,
-		maintainerEmails:                   maintainerEmails,
-		maintainerOrContributorEmails:      maintainerOrContributor,
-		maintainerForgeEmails:              maintainerForgeEmails,
-		maintainerOrContributorForgeEmails: maintainerOrContributorForgeEmails,
-		trustedForge:                       f,
-		allowSSHSignatures:                 repo.Rules.AllowSSHSignatures,
-		requireSSHUserPresent:              repo.Rules.RequireSSHUserPresent,
-		requireSSHUserVerified:             repo.Rules.RequireSSHUserVerified,
-		allowSSHSHA256:                     repo.Rules.AllowSSHSHA256,
-		allowPGPSignatures:                 repo.Rules.AllowPGPSignatures,
-		requireSignedTags:                  repo.Rules.RequireSignedTags,
-		requireMergeCommits:                repo.Rules.RequireMergeCommits,
-		requireCountersigning:              repo.Rules.RequireCountersigning,
-		requireSHA512:                      repo.Rules.RequireSHA512,
-		exemptedTags:                       exemptedTagMap,
-		exemptedTagsSHA512:                 exemptedTagSHA512Map,
-		protectedBranches:                  repo.ProtectedBranches,
-		lockdown:                           repo.Rules.Lockdown,
+		afterSHA1:                               afterSHA1,
+		afterSHA512:                             afterSHA512,
+		sha1ToBranch:                            sha1ToBranch,
+		branchToSHA1:                            branchToSHA1,
+		sha512ToBranch:                          sha512ToBranch,
+		afterSHA1ToSHA512:                       afterSHA1ToSHA512,
+		maintainerEmails:                        maintainerEmails,
+		maintainerOrContributorEmails:           maintainerOrContributor,
+		maintainerForgeEmails:                   maintainerForgeEmails,
+		maintainerOrContributorForgeEmails:      maintainerOrContributorForgeEmails,
+		trustedForge:                            f,
+		allowSSHSignatures:                      repo.Rules.AllowSSHSignatures,
+		requireSSHUserPresent:                   repo.Rules.RequireSSHUserPresent,
+		requireSSHUserVerified:                  repo.Rules.RequireSSHUserVerified,
+		allowSSHSHA256:                          repo.Rules.AllowSSHSHA256,
+		allowPGPSignatures:                      repo.Rules.AllowPGPSignatures,
+		requireSignedTags:                       repo.Rules.RequireSignedTags,
+		requireMergeCommits:                     repo.Rules.RequireMergeCommits,
+		requireCountersigning:                   repo.Rules.RequireCountersigning,
+		requireSHA512:                           repo.Rules.RequireSHA512,
+		exemptedTags:                            exemptedTagMap,
+		exemptedTagsSHA512:                      exemptedTagSHA512Map,
+		protectedBranches:                       repo.ProtectedBranches,
+		lockdown:                                repo.Rules.Lockdown,
+		requireDistinctCountersignTagIdentities: repo.Rules.RequireDistinctCountersignTagIdentities,
+		requireDistinctCountersignCommitIdentities: repo.Rules.RequireDistinctCountersignCommitIdentities,
 	}, nil
 }
 

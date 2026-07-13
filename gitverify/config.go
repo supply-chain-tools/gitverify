@@ -412,7 +412,7 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 			return nil, fmt.Errorf("requireSignedTags must be used with requireDistinctTagIdentities")
 		}
 
-		if parsedRules.RequireCountersigning && !(parsedRules.RequireDistinctCountersignTagIdentities ||
+		if !(parsedRules.RequireDistinctCountersignTagIdentities ||
 			parsedRules.RequireDistinctCountersignCommitIdentities ||
 			parsedRules.RequireDedicatedCountersignTagKeys ||
 			parsedRules.RequireDedicatedCountersignCommitKeys) {

@@ -409,7 +409,7 @@ func validateOpts(opts *ValidateOptions, repo *git.Repository, state *gitkit.Rep
 				if opts.Commit == "" {
 					config.requireSignedTags = true
 				}
-				err := validateTag(tag, state, config, commitMetadata, gitHashSHA1, gitHashSHA512)
+				err := validateTag(tag, state, config, commitMetadata, gitHashSHA1, gitHashSHA512, !opts.OnlyVerifyFirstSignature)
 				if err != nil {
 					return err
 				}
@@ -831,7 +831,7 @@ func validateTags(repo *git.Repository, state *gitkit.RepoState, repoConfig *Rep
 	}
 
 	err = tags.ForEach(func(tag *plumbing.Reference) error {
-		return validateTag(tag, state, repoConfig, commitMetadata, gitHashSHA1, gitHashSHA512)
+		return validateTag(tag, state, repoConfig, commitMetadata, gitHashSHA1, gitHashSHA512, true)
 	})
 	if err != nil {
 		return err
@@ -840,7 +840,7 @@ func validateTags(repo *git.Repository, state *gitkit.RepoState, repoConfig *Rep
 	return nil
 }
 
-func validateTag(tag *plumbing.Reference, state *gitkit.RepoState, repoConfig *RepoConfig, commitMetadata map[plumbing.Hash]*CommitData, gitHashSHA1 githash.GitHash, gitHashSHA512 githash.GitHash) error {
+func validateTag(tag *plumbing.Reference, state *gitkit.RepoState, repoConfig *RepoConfig, commitMetadata map[plumbing.Hash]*CommitData, gitHashSHA1 githash.GitHash, gitHashSHA512 githash.GitHash, fullVerification bool) error {
 	isExempted := false
 
 	t, isAnnotatedTag := state.TagMap[tag.Hash()]
@@ -951,19 +951,22 @@ func validateTag(tag *plumbing.Reference, state *gitkit.RepoState, repoConfig *R
 				return err
 			}
 
-			err = verifyDistinctIdentities(t, c, commitMetadata, repoConfig)
-			if err != nil {
-				return err
+			if fullVerification {
+				err := validateCommit(c, commitMetadata, repoConfig)
+				if err != nil {
+					return err
+				}
+
+				err = verifyDistinctIdentities(t, c, commitMetadata, repoConfig)
+				if err != nil {
+					return err
+				}
 			}
 		}
 	} else {
 		if !isExempted {
 			if repoConfig.requireSignedTags {
 				return fmt.Errorf("tag '%s' is lightweight, but signing is required", tag.Name().String())
-			}
-
-			if repoConfig.requireDistinctTagIdentities {
-				return fmt.Errorf("tag '%s' is lightweight, but requireDistinctTagIdentities is set", tag.Name().String())
 			}
 
 			c, found := state.CommitMap[tag.Hash()]
@@ -987,10 +990,19 @@ func verifyDistinctIdentities(tag *object.Tag, commit *object.Commit, commitMeta
 		return fmt.Errorf("commit %s not found in commit metadata", commit.Hash.String())
 	}
 
+	mergeTag := metadata.MergeTag
+	if metadata.AfterOrAncestorOfAfter && commit.MergeTag != "" {
+		var err error
+		mergeTag, err = extractMergeTag(commit)
+		if err != nil {
+			return err
+		}
+	}
+
 	taggerEmail := tag.Tagger.Email
-	if metadata.MergeTag != nil {
+	if mergeTag != nil {
 		countersignCommitEmail := commit.Committer.Email
-		countersignTagEmail := metadata.MergeTag.Tagger.Email
+		countersignTagEmail := mergeTag.Tagger.Email
 		if repoConfig.requireDistinctTagIdentities {
 			if taggerEmail == countersignCommitEmail {
 				return fmt.Errorf("requireDistinctTagIdentities is set but identity %s is reused for countersigned commit and tag %s", taggerEmail, tag.Name)

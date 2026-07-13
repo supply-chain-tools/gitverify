@@ -30,6 +30,7 @@ type RepoConfig struct {
 	requireMergeCommits                        bool
 	requireCountersigning                      bool
 	requireSHA512                              bool
+	requireMatchedVersions                     bool
 	protectedBranches                          hashset.Set[string]
 	exemptedTags                               map[string]string
 	exemptedTagsSHA512                         map[string]string
@@ -381,6 +382,7 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 		requireMergeCommits:                        repo.Rules.RequireMergeCommits,
 		requireCountersigning:                      repo.Rules.RequireCountersigning,
 		requireSHA512:                              repo.Rules.RequireSHA512,
+		requireMatchedVersions:                     repo.Rules.RequireMatchedVersions,
 		exemptedTags:                               exemptedTagMap,
 		exemptedTagsSHA512:                         exemptedTagSHA512Map,
 		protectedBranches:                          repo.ProtectedBranches,

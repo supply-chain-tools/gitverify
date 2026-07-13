@@ -389,6 +389,11 @@ func validateCommit(commit *object.Commit, state *gitkit.RepoState, commitMetada
 			}
 		}
 
+		err = verifyConnected(commit.ParentHashes[1], commit.ParentHashes[0], state)
+		if err != nil {
+			return err
+		}
+
 		metadata.MergeTag = mergeTag
 	}
 
@@ -785,11 +790,6 @@ func validateProtectedBranch(reference *plumbing.Reference, branchName string, s
 
 			if metadata.MergeTag == nil {
 				return fmt.Errorf("requireCountersigning is set, but no mergetag in commit %s", current.Hash.String())
-			}
-
-			err = verifyConnected(current.ParentHashes[1], current.ParentHashes[0], state)
-			if err != nil {
-				return err
 			}
 		}
 

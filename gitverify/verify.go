@@ -923,6 +923,12 @@ func validateTags(repo *git.Repository, state *gitkit.RepoState, repoConfig *Rep
 func validateTag(tag *plumbing.Reference, state *gitkit.RepoState, repoConfig *RepoConfig, commitMetadata map[plumbing.Hash]*CommitData, gitHashSHA1 githash.GitHash, gitHashSHA512 githash.GitHash, fullVerification bool) error {
 	isExempted := false
 
+	tagPrefix := "refs/tags/"
+	if !strings.HasPrefix(tag.Name().String(), tagPrefix) {
+		return fmt.Errorf("tag name %s does not start with %s", tag.Name().String(), tagPrefix)
+	}
+	tagName := strings.TrimPrefix(tag.Name().String(), "refs/tags/")
+
 	t, isAnnotatedTag := state.TagMap[tag.Hash()]
 	if isAnnotatedTag {
 		if t.Hash != tag.Hash() {
@@ -981,10 +987,9 @@ func validateTag(tag *plumbing.Reference, state *gitkit.RepoState, repoConfig *R
 		isExempted = true
 	}
 
-	entry := strings.TrimPrefix(tag.Name().String(), "refs/tags/")
 	if isAnnotatedTag {
-		if entry != t.Name {
-			return fmt.Errorf("tag ref '%s' does not match name '%s'", entry, t.Name)
+		if tagName != t.Name {
+			return fmt.Errorf("tag ref '%s' does not match name '%s'", tagName, t.Name)
 		}
 
 		if !isExempted {
@@ -995,7 +1000,7 @@ func validateTag(tag *plumbing.Reference, state *gitkit.RepoState, repoConfig *R
 
 			id, found := repoConfig.maintainerEmails[t.Tagger.Email]
 			if !found {
-				return fmt.Errorf("no maintainer with email '%s' for tag %s", t.Tagger.Email, t.Name)
+				return fmt.Errorf("no maintainer with email '%s' for tag %s", t.Tagger.Email, tagName)
 			}
 
 			switch signatureType {
@@ -1006,7 +1011,7 @@ func validateTag(tag *plumbing.Reference, state *gitkit.RepoState, repoConfig *R
 				}
 				err = validateSSH(content, t.PGPSignature, id.tagSSHPublicKeys, repoConfig)
 				if err != nil {
-					return fmt.Errorf("failed to validate tag %s: %w", t.Name, err)
+					return fmt.Errorf("failed to validate tag %s: %w", tagName, err)
 				}
 			case SignatureTypePGP:
 				err := validateIdentityPGPTag(t, id.tagPGPPublicKeys, repoConfig)
@@ -1015,10 +1020,10 @@ func validateTag(tag *plumbing.Reference, state *gitkit.RepoState, repoConfig *R
 				}
 			case SignatureTypeNone:
 				if repoConfig.requireSignedTags {
-					return fmt.Errorf("unsigned annotated tag: %s", t.Name)
+					return fmt.Errorf("unsigned annotated tag: %s", tagName)
 				}
 			default:
-				return fmt.Errorf("unknown signature type for tag: %s", t.Name)
+				return fmt.Errorf("unknown signature type for tag: %s", tagName)
 			}
 
 			c, found := state.CommitMap[t.Target]
@@ -1042,26 +1047,42 @@ func validateTag(tag *plumbing.Reference, state *gitkit.RepoState, repoConfig *R
 					return err
 				}
 
-				err = verifyVersionForTag(t.Name, c, commitMetadata)
-				if err != nil {
-					return err
+				if repoConfig.requireMatchedVersions {
+					err = verifyVersionForTag(tagName, c, commitMetadata)
+					if err != nil {
+						return err
+					}
 				}
 			}
 		}
 	} else {
 		if !isExempted {
 			if repoConfig.requireSignedTags {
-				return fmt.Errorf("tag '%s' is lightweight, but signing is required", tag.Name().String())
+				return fmt.Errorf("tag '%s' is lightweight, but signing is required", tagName)
 			}
 
 			c, found := state.CommitMap[tag.Hash()]
 			if !found {
-				return fmt.Errorf("commit %s missing for tag %s", t.Target.String(), tag.Name().String())
+				return fmt.Errorf("commit %s missing for tag %s", t.Target.String(), tagName)
 			}
 
 			err := verifyConnectedToAfter(c, state, commitMetadata)
 			if err != nil {
 				return err
+			}
+
+			if fullVerification {
+				err := validateCommit(c, state, commitMetadata, gitHashSHA512, repoConfig)
+				if err != nil {
+					return err
+				}
+
+				if repoConfig.requireMatchedVersions {
+					err = verifyVersionForTag(tag.Name().String(), c, commitMetadata)
+					if err != nil {
+						return err
+					}
+				}
 			}
 		}
 	}

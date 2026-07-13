@@ -107,8 +107,9 @@ type Rules struct {
 	RequireMergeCommits   *bool `json:"requireMergeCommits"`
 	RequireCountersigning *bool `json:"requireCountersigning"`
 
-	RequireSHA512    *bool `json:"requireSha512"`
-	VerifyAllCommits *bool `json:"verifyAllCommits"`
+	RequireSHA512          *bool `json:"requireSha512"`
+	RequireMatchedVersions *bool `json:"requireMatchedVersions"`
+	VerifyAllCommits       *bool `json:"verifyAllCommits"`
 
 	TrustForge *bool `json:"trustForge"`
 
@@ -181,8 +182,9 @@ type ParsedRules struct {
 	RequireMergeCommits   bool
 	RequireCountersigning bool
 
-	RequireSHA512    bool
-	VerifyAllCommits bool
+	RequireSHA512          bool
+	RequireMatchedVersions bool
+	VerifyAllCommits       bool
 
 	TrustForge bool
 
@@ -357,6 +359,7 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 			RequireMergeCommits:                        true,
 			RequireCountersigning:                      false,
 			RequireSHA512:                              false,
+			RequireMatchedVersions:                     false,
 			VerifyAllCommits:                           false,
 			TrustForge:                                 false,
 			RequireDedicatedTagKeys:                    false,
@@ -726,6 +729,10 @@ func overwriteExisting(existing ParsedRules, rules *Rules) ParsedRules {
 
 		if rules.RequireSHA512 != nil {
 			existing.RequireSHA512 = *rules.RequireSHA512
+		}
+
+		if rules.RequireMatchedVersions != nil {
+			existing.RequireMatchedVersions = *rules.RequireMatchedVersions
 		}
 
 		if rules.VerifyAllCommits != nil {

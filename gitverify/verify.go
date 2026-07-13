@@ -57,7 +57,7 @@ func Verify(repo *git.Repository, state *gitkit.RepoState, repoConfig *RepoConfi
 	} else {
 		if repoConfig.verifyAllCommits {
 			for _, commit := range state.CommitMap {
-				err := validateCommit(commit, commitMetadata, repoConfig)
+				err := validateCommit(commit, state, commitMetadata, gitHashSHA512, repoConfig)
 				if err != nil {
 					return err
 				}
@@ -208,7 +208,7 @@ func getRemoteSet(repo *git.Repository) (hashset.Set[string], error) {
 	return remoteSet, nil
 }
 
-func validateCommit(commit *object.Commit, commitMetadata map[plumbing.Hash]*CommitData, repoConfig *RepoConfig) error {
+func validateCommit(commit *object.Commit, state *gitkit.RepoState, commitMetadata map[plumbing.Hash]*CommitData, gitHashSHA512 githash.GitHash, repoConfig *RepoConfig) error {
 	metadata, found := commitMetadata[commit.Hash]
 	if !found {
 		return fmt.Errorf("commit not processed: %s", commit.Hash)
@@ -313,6 +313,10 @@ func validateCommit(commit *object.Commit, commitMetadata map[plumbing.Hash]*Com
 	}
 
 	if commit.MergeTag != "" {
+		if len(commit.ParentHashes) != 2 {
+			return fmt.Errorf("expected exactly 2 parent commits for countersigned commit %s", commit.Hash.String())
+		}
+
 		mergeTag, err := extractMergeTag(commit)
 		if err != nil {
 			return err
@@ -367,10 +371,63 @@ func validateCommit(commit *object.Commit, commitMetadata map[plumbing.Hash]*Com
 			}
 		}
 
+		targetCommit, found := state.CommitMap[mergeTag.Target]
+		if !found {
+			return fmt.Errorf("mergetag target commit %s not found", metadata.MergeTag.Target.String())
+		}
+
+		if commit.TreeHash != targetCommit.TreeHash {
+			return fmt.Errorf("countersigned trees do not match for countersigned commit %s", commit.Hash.String())
+		}
+
+		if repoConfig.requireSHA512 {
+			messageLines := strings.Split(mergeTag.Message, "\n")
+
+			err = verifySha512(commit.Hash, targetCommit.Hash, messageLines, gitHashSHA512)
+			if err != nil {
+				return err
+			}
+		}
+
 		metadata.MergeTag = mergeTag
 	}
 
 	metadata.SignatureVerified = true
+
+	return nil
+}
+
+func verifySha512(commitHash plumbing.Hash, targetCommitHash plumbing.Hash, messageLines []string, gitHashSHA512 githash.GitHash) error {
+	prefix := "Gitverify-object-sha512: "
+
+	verified := false
+	for i := len(messageLines) - 1; i >= 0; i-- {
+		if strings.HasPrefix(messageLines[i], prefix) {
+			hash := strings.TrimPrefix(messageLines[i], prefix)
+
+			if !HexSHA512Regex.MatchString(hash) {
+				return fmt.Errorf("malformed Gitverify-object-sha512 in merge commit: %s", commitHash.String())
+			}
+
+			objectSHA512, err := gitHashSHA512.CommitSum(targetCommitHash)
+			if err != nil {
+				return err
+			}
+
+			if hex.EncodeToString(objectSHA512) == hash {
+				// Note that this verifies the commit the mergetag points to, including its tree, which by the
+				// check above has to point to the same tree that is in the merge commit.
+				verified = true
+				break
+			}
+
+			return fmt.Errorf("wrong Gitverify-object-sha512 in merge commit %s", commitHash.String())
+		}
+	}
+
+	if !verified {
+		return fmt.Errorf("missing Gitverify-object-sha512 in merge commit %s", commitHash.String())
+	}
 
 	return nil
 }
@@ -461,7 +518,7 @@ func validateOpts(opts *ValidateOptions, repo *git.Repository, state *gitkit.Rep
 			return fmt.Errorf("target commit '%s' not found", opts.Commit)
 		}
 
-		err = validateCommitsRecursively(c, state, commitMetadata, config, opts)
+		err = validateCommitsRecursively(c, state, commitMetadata, gitHashSHA512, config, opts)
 		if err != nil {
 			return err
 		}
@@ -505,7 +562,7 @@ func validateOpts(opts *ValidateOptions, repo *git.Repository, state *gitkit.Rep
 						return fmt.Errorf("failed to validate protected branch '%s' rules: %w", reference.Name(), err)
 					}
 				} else {
-					err := validateCommitsRecursively(c, state, commitMetadata, config, opts)
+					err := validateCommitsRecursively(c, state, commitMetadata, gitHashSHA512, config, opts)
 					if err != nil {
 						return err
 					}
@@ -522,7 +579,7 @@ func validateOpts(opts *ValidateOptions, repo *git.Repository, state *gitkit.Rep
 						return fmt.Errorf("target commit %s does not point to the tip of branch '%s'", targetHash.String(), reference.Name())
 					}
 				} else {
-					err = validateOnBranch(targetHash, branchName, c, state, commitMetadata, config)
+					err = validateOnBranch(targetHash, branchName, c, state, commitMetadata, gitHashSHA512, config)
 					if err != nil {
 						return err
 					}
@@ -542,7 +599,7 @@ func validateOpts(opts *ValidateOptions, repo *git.Repository, state *gitkit.Rep
 	return nil
 }
 
-func validateOnBranch(targetHash plumbing.Hash, branchName string, c *object.Commit, state *gitkit.RepoState, commitMetadata map[plumbing.Hash]*CommitData, config *RepoConfig) error {
+func validateOnBranch(targetHash plumbing.Hash, branchName string, c *object.Commit, state *gitkit.RepoState, commitMetadata map[plumbing.Hash]*CommitData, gitHashSHA512 githash.GitHash, config *RepoConfig) error {
 	current := c
 
 	for {
@@ -560,7 +617,7 @@ func validateOnBranch(targetHash plumbing.Hash, branchName string, c *object.Com
 			return fmt.Errorf("target parent hash not found: %s", parentHash)
 		}
 
-		err := validateCommit(parent, commitMetadata, config)
+		err := validateCommit(parent, state, commitMetadata, gitHashSHA512, config)
 		if err != nil {
 			return err
 		}
@@ -571,8 +628,8 @@ func validateOnBranch(targetHash plumbing.Hash, branchName string, c *object.Com
 	return nil
 }
 
-func validateCommitsRecursively(c *object.Commit, state *gitkit.RepoState, commitMetadata map[plumbing.Hash]*CommitData, config *RepoConfig, opts *ValidateOptions) error {
-	err := validateCommit(c, commitMetadata, config)
+func validateCommitsRecursively(c *object.Commit, state *gitkit.RepoState, commitMetadata map[plumbing.Hash]*CommitData, gitHashSHA512 githash.GitHash, config *RepoConfig, opts *ValidateOptions) error {
+	err := validateCommit(c, state, commitMetadata, gitHashSHA512, config)
 	if err != nil {
 		return err
 	}
@@ -606,7 +663,7 @@ func validateCommitsRecursively(c *object.Commit, state *gitkit.RepoState, commi
 				}
 
 				if !commitMetadata[parent.Hash].AfterOrAncestorOfAfter {
-					err := validateCommit(parent, commitMetadata, config)
+					err := validateCommit(parent, state, commitMetadata, gitHashSHA512, config)
 					if err != nil {
 						return err
 					}
@@ -708,7 +765,7 @@ func validateProtectedBranch(reference *plumbing.Reference, branchName string, s
 	}
 
 	for {
-		err := validateCommit(current, commitMetadata, config)
+		err := validateCommit(current, state, commitMetadata, gitHashSHA512, config)
 		if err != nil {
 			return err
 		}
@@ -730,56 +787,9 @@ func validateProtectedBranch(reference *plumbing.Reference, branchName string, s
 				return fmt.Errorf("requireCountersigning is set, but no mergetag in commit %s", current.Hash.String())
 			}
 
-			targetCommit, found := state.CommitMap[metadata.MergeTag.Target]
-			if !found {
-				return fmt.Errorf("mergetag target commit %s not found", metadata.MergeTag.Target.String())
-			}
-
-			if current.TreeHash != targetCommit.TreeHash {
-				return fmt.Errorf("requireCountersigning is set, but commit tree and mergetag tree does not match for commit %s", current.Hash.String())
-			}
-
-			if metadata.MergeTag.Tagger.Email == current.Committer.Email {
-				return fmt.Errorf("committer and tagger cannot be the same when requireCountersigning is set for commit %s", current.Hash.String())
-			}
-
 			err = verifyConnected(current.ParentHashes[1], current.ParentHashes[0], state)
 			if err != nil {
 				return err
-			}
-
-			if config.requireSHA512 {
-				messageLines := strings.Split(metadata.MergeTag.Message, "\n")
-				prefix := "Gitverify-object-sha512: "
-
-				verified := false
-				for i := len(messageLines) - 1; i >= 0; i-- {
-					if strings.HasPrefix(messageLines[i], prefix) {
-						hash := strings.TrimPrefix(messageLines[i], prefix)
-
-						if !HexSHA512Regex.MatchString(hash) {
-							return fmt.Errorf("malformed Gitverify-object-sha512 in merge commit: %s", current.Hash.String())
-						}
-
-						objectSHA512, err := gitHashSHA512.CommitSum(targetCommit.Hash)
-						if err != nil {
-							return err
-						}
-
-						if hex.EncodeToString(objectSHA512) == hash {
-							// Note that this verifies the commit the mergetag points to, including its tree, which by the
-							// check above has to point to the same tree that is in the merge commit.
-							verified = true
-							break
-						}
-
-						return fmt.Errorf("wrong Gitverify-object-sha512 in merge commit %s", current.Hash.String())
-					}
-				}
-
-				if !verified {
-					return fmt.Errorf("missing Gitverify-object-sha512 in merge commit %s", current.Hash.String())
-				}
 			}
 		}
 
@@ -965,7 +975,7 @@ func validateTag(tag *plumbing.Reference, state *gitkit.RepoState, repoConfig *R
 			}
 
 			if fullVerification {
-				err := validateCommit(c, commitMetadata, repoConfig)
+				err := validateCommit(c, state, commitMetadata, gitHashSHA512, repoConfig)
 				if err != nil {
 					return err
 				}

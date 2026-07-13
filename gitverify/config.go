@@ -116,6 +116,7 @@ type Rules struct {
 	RequireDedicatedCountersignTagKeys    *bool `json:"requireDedicatedCountersignTagKeys"`
 	RequireDedicatedCountersignCommitKeys *bool `json:"requireDedicatedCountersignCommitKeys"`
 
+	RequireDistinctTagIdentities               *bool `json:"requireDistinctTagIdentities"`
 	RequireDistinctCountersignTagsIdentities   *bool `json:"requireDistinctCountersignTagIdentities"`
 	RequireDistinctCountersignCommitIdentities *bool `json:"requireDistinctCountersignCommitIdentities"`
 }
@@ -189,6 +190,7 @@ type ParsedRules struct {
 	RequireDedicatedCountersignTagKeys    bool
 	RequireDedicatedCountersignCommitKeys bool
 
+	RequireDistinctTagIdentities               bool
 	RequireDistinctCountersignTagIdentities    bool
 	RequireDistinctCountersignCommitIdentities bool
 }
@@ -336,6 +338,7 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 			RequireDedicatedTagKeys:                    false,
 			RequireDedicatedCountersignTagKeys:         false,
 			RequireDedicatedCountersignCommitKeys:      false,
+			RequireDistinctTagIdentities:               false,
 			RequireDistinctCountersignTagIdentities:    true,
 			RequireDistinctCountersignCommitIdentities: true,
 		}
@@ -403,6 +406,17 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 
 		if parsedRules.Lockdown == true && parsedRules.RequireSignedTags == false {
 			return nil, fmt.Errorf("requireSignedTags must be used with lockdown")
+		}
+
+		if parsedRules.RequireDistinctTagIdentities == true && parsedRules.RequireSignedTags == false {
+			return nil, fmt.Errorf("requireSignedTags must be used with requireDistinctTagIdentities")
+		}
+
+		if parsedRules.RequireCountersigning && !(parsedRules.RequireDistinctCountersignTagIdentities ||
+			parsedRules.RequireDistinctCountersignCommitIdentities ||
+			parsedRules.RequireDedicatedCountersignTagKeys ||
+			parsedRules.RequireDedicatedCountersignCommitKeys) {
+			return nil, fmt.Errorf("when using countersigning, dedicated keys or distinct identities must be set")
 		}
 
 		if parsedRules.Lockdown == true && parsedRules.AllowSSHSHA256 == true {
@@ -700,6 +714,10 @@ func overwriteExisting(existing ParsedRules, rules *Rules) ParsedRules {
 
 		if rules.RequireDedicatedCountersignCommitKeys != nil {
 			existing.RequireDedicatedCountersignCommitKeys = *rules.RequireDedicatedCountersignCommitKeys
+		}
+
+		if rules.RequireDistinctTagIdentities != nil {
+			existing.RequireDistinctTagIdentities = *rules.RequireDistinctTagIdentities
 		}
 
 		if rules.RequireDistinctCountersignTagsIdentities != nil {

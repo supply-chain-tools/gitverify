@@ -34,6 +34,7 @@ type RepoConfig struct {
 	exemptedTags                               map[string]string
 	exemptedTagsSHA512                         map[string]string
 	lockdown                                   bool
+	requireDistinctTagIdentities               bool
 	requireDistinctCountersignCommitIdentities bool
 	requireDistinctCountersignTagIdentities    bool
 }
@@ -357,31 +358,32 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 	}
 
 	return &RepoConfig{
-		afterSHA1:                               afterSHA1,
-		afterSHA512:                             afterSHA512,
-		sha1ToBranch:                            sha1ToBranch,
-		branchToSHA1:                            branchToSHA1,
-		sha512ToBranch:                          sha512ToBranch,
-		afterSHA1ToSHA512:                       afterSHA1ToSHA512,
-		maintainerEmails:                        maintainerEmails,
-		maintainerOrContributorEmails:           maintainerOrContributor,
-		maintainerForgeEmails:                   maintainerForgeEmails,
-		maintainerOrContributorForgeEmails:      maintainerOrContributorForgeEmails,
-		trustedForge:                            f,
-		allowSSHSignatures:                      repo.Rules.AllowSSHSignatures,
-		requireSSHUserPresent:                   repo.Rules.RequireSSHUserPresent,
-		requireSSHUserVerified:                  repo.Rules.RequireSSHUserVerified,
-		allowSSHSHA256:                          repo.Rules.AllowSSHSHA256,
-		allowPGPSignatures:                      repo.Rules.AllowPGPSignatures,
-		requireSignedTags:                       repo.Rules.RequireSignedTags,
-		requireMergeCommits:                     repo.Rules.RequireMergeCommits,
-		requireCountersigning:                   repo.Rules.RequireCountersigning,
-		requireSHA512:                           repo.Rules.RequireSHA512,
-		exemptedTags:                            exemptedTagMap,
-		exemptedTagsSHA512:                      exemptedTagSHA512Map,
-		protectedBranches:                       repo.ProtectedBranches,
-		lockdown:                                repo.Rules.Lockdown,
-		requireDistinctCountersignTagIdentities: repo.Rules.RequireDistinctCountersignTagIdentities,
+		afterSHA1:                                  afterSHA1,
+		afterSHA512:                                afterSHA512,
+		sha1ToBranch:                               sha1ToBranch,
+		branchToSHA1:                               branchToSHA1,
+		sha512ToBranch:                             sha512ToBranch,
+		afterSHA1ToSHA512:                          afterSHA1ToSHA512,
+		maintainerEmails:                           maintainerEmails,
+		maintainerOrContributorEmails:              maintainerOrContributor,
+		maintainerForgeEmails:                      maintainerForgeEmails,
+		maintainerOrContributorForgeEmails:         maintainerOrContributorForgeEmails,
+		trustedForge:                               f,
+		allowSSHSignatures:                         repo.Rules.AllowSSHSignatures,
+		requireSSHUserPresent:                      repo.Rules.RequireSSHUserPresent,
+		requireSSHUserVerified:                     repo.Rules.RequireSSHUserVerified,
+		allowSSHSHA256:                             repo.Rules.AllowSSHSHA256,
+		allowPGPSignatures:                         repo.Rules.AllowPGPSignatures,
+		requireSignedTags:                          repo.Rules.RequireSignedTags,
+		requireMergeCommits:                        repo.Rules.RequireMergeCommits,
+		requireCountersigning:                      repo.Rules.RequireCountersigning,
+		requireSHA512:                              repo.Rules.RequireSHA512,
+		exemptedTags:                               exemptedTagMap,
+		exemptedTagsSHA512:                         exemptedTagSHA512Map,
+		protectedBranches:                          repo.ProtectedBranches,
+		lockdown:                                   repo.Rules.Lockdown,
+		requireDistinctTagIdentities:               repo.Rules.RequireDistinctTagIdentities,
+		requireDistinctCountersignTagIdentities:    repo.Rules.RequireDistinctCountersignTagIdentities,
 		requireDistinctCountersignCommitIdentities: repo.Rules.RequireDistinctCountersignCommitIdentities,
 	}, nil
 }

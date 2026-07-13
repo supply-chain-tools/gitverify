@@ -348,13 +348,13 @@ func validateCommit(commit *object.Commit, commitMetadata map[plumbing.Hash]*Com
 
 		if repoConfig.requireDistinctCountersignTagIdentities {
 			if mergeTag.Tagger.Email == email {
-				return fmt.Errorf("requireDistinctCountersignTagIdentities is set but identity %s reused in %s", email, commit.Hash.String())
+				return fmt.Errorf("requireDistinctCountersignTagIdentities is set but identity %s is reused in commit %s", email, commit.Hash.String())
 			}
 		}
 
 		if repoConfig.requireDistinctCountersignCommitIdentities {
 			if mergeTag.Tagger.Email == email {
-				return fmt.Errorf("requireDistinctCountersignCommitIdentities is set but identity %s reused in %s", email, commit.Hash.String())
+				return fmt.Errorf("requireDistinctCountersignCommitIdentities is set but identity %s is reused in commit %s", email, commit.Hash.String())
 			}
 		}
 
@@ -950,11 +950,20 @@ func validateTag(tag *plumbing.Reference, state *gitkit.RepoState, repoConfig *R
 			if err != nil {
 				return err
 			}
+
+			err = verifyDistinctIdentities(t, c, commitMetadata, repoConfig)
+			if err != nil {
+				return err
+			}
 		}
 	} else {
 		if !isExempted {
 			if repoConfig.requireSignedTags {
 				return fmt.Errorf("tag '%s' is lightweight, but signing is required", tag.Name().String())
+			}
+
+			if repoConfig.requireDistinctTagIdentities {
+				return fmt.Errorf("tag '%s' is lightweight, but requireDistinctTagIdentities is set", tag.Name().String())
 			}
 
 			c, found := state.CommitMap[tag.Hash()]
@@ -965,6 +974,49 @@ func validateTag(tag *plumbing.Reference, state *gitkit.RepoState, repoConfig *R
 			err := verifyConnectedToAfter(c, state, commitMetadata, repoConfig)
 			if err != nil {
 				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func verifyDistinctIdentities(tag *object.Tag, commit *object.Commit, commitMetadata map[plumbing.Hash]*CommitData, repoConfig *RepoConfig) error {
+	metadata, found := commitMetadata[commit.Hash]
+	if !found {
+		return fmt.Errorf("commit %s not found in commit metadata", commit.Hash.String())
+	}
+
+	taggerEmail := tag.Tagger.Email
+	if metadata.MergeTag != nil {
+		countersignCommitEmail := commit.Committer.Email
+		countersignTagEmail := metadata.MergeTag.Tagger.Email
+		if repoConfig.requireDistinctTagIdentities {
+			if taggerEmail == countersignCommitEmail {
+				return fmt.Errorf("requireDistinctTagIdentities is set but identity %s is reused for countersigned commit and tag %s", taggerEmail, tag.Name)
+			}
+
+			if taggerEmail == countersignTagEmail {
+				return fmt.Errorf("requireDistinctTagIdentities is set but identity %s is reused for countersigned tag and tag %s", taggerEmail, tag.Name)
+			}
+		}
+
+		if repoConfig.requireDistinctCountersignTagIdentities {
+			if taggerEmail == countersignTagEmail {
+				return fmt.Errorf("requireDistinctCountersignTagIdentities is set but identity %s is reused for countersigned commit and tag %s", taggerEmail, tag.Name)
+			}
+		}
+
+		if repoConfig.requireDistinctCountersignCommitIdentities {
+			if taggerEmail == countersignCommitEmail {
+				return fmt.Errorf("requireDistinctCountersignCommitIdentities is set but identity %s is reused for countersigned commit and tag %s", taggerEmail, tag.Name)
+			}
+		}
+	} else {
+		commitEmail := commit.Committer.Email
+		if repoConfig.requireDistinctTagIdentities {
+			if taggerEmail == commitEmail {
+				return fmt.Errorf("requireDistinctTagIdentities is set but identity %s is reused for tag %s", taggerEmail, tag.Name)
 			}
 		}
 	}

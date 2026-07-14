@@ -304,23 +304,23 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 			return nil, fmt.Errorf("duplicate exempted SHA-512 tag %s found in repository %s", exemptTag.Ref, repoUri)
 		}
 
-		if exemptTag.Hash.SHA1 == nil && exemptTag.Hash.SHA512 == nil {
+		if exemptTag.SHA1 == nil && exemptTag.SHA512 == nil {
 			return nil, fmt.Errorf("at least one of hash.sha1 and hash.sha512 must be set for exempted tag %s", exemptTag.Ref)
 		}
 
-		if exemptTag.Hash.SHA1 != nil {
-			if !HexSHA1Regex.MatchString(*exemptTag.Hash.SHA1) {
-				return nil, fmt.Errorf("SHA-1 hash for exempted tag must be 40 character hex, got %s", *exemptTag.Hash.SHA1)
+		if exemptTag.SHA1 != nil {
+			if !HexSHA1Regex.MatchString(*exemptTag.SHA1) {
+				return nil, fmt.Errorf("SHA-1 hash for exempted tag must be 40 character hex, got %s", *exemptTag.SHA1)
 			}
-			exemptedTagMap[exemptTag.Ref] = *exemptTag.Hash.SHA1
+			exemptedTagMap[exemptTag.Ref] = *exemptTag.SHA1
 		}
 
-		if exemptTag.Hash.SHA512 != nil {
-			if !HexSHA512Regex.MatchString(*exemptTag.Hash.SHA512) {
-				return nil, fmt.Errorf("hash.sha512 for exempted tag must be 128 character hex, got %s", *exemptTag.Hash.SHA512)
+		if exemptTag.SHA512 != nil {
+			if !HexSHA512Regex.MatchString(*exemptTag.SHA512) {
+				return nil, fmt.Errorf("hash.sha512 for exempted tag must be 128 character hex, got %s", *exemptTag.SHA512)
 			}
 
-			exemptedTagSHA512Map[exemptTag.Ref] = *exemptTag.Hash.SHA512
+			exemptedTagSHA512Map[exemptTag.Ref] = *exemptTag.SHA512
 		}
 	}
 

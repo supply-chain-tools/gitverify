@@ -103,23 +103,23 @@ func VerifyLocalState(repo *git.Repository, state *gitkit.RepoState, repoConfig 
 	for _, tag := range localState.Tags {
 		newTag, found := newTagMap[tag.Ref]
 		if found {
-			if newTag.Hash.SHA1 == nil || tag.Hash.SHA1 == nil {
+			if newTag.SHA1 == nil || tag.SHA1 == nil {
 				return fmt.Errorf("tag SHA-1 hashes must be set")
 			}
 
-			if newTag.Hash.SHA512 == nil || tag.Hash.SHA512 == nil {
+			if newTag.SHA512 == nil || tag.SHA512 == nil {
 				return fmt.Errorf("tag SHA-512 hashes must be set")
 			}
 
-			if *newTag.Hash.SHA1 != *tag.Hash.SHA1 {
-				return fmt.Errorf("tag '%s' hash has changed from %s to %s", tag.Ref, *tag.Hash.SHA1, *newTag.Hash.SHA1)
+			if *newTag.SHA1 != *tag.SHA1 {
+				return fmt.Errorf("tag '%s' hash has changed from %s to %s", tag.Ref, *tag.SHA1, *newTag.SHA1)
 			}
 
-			if *newTag.Hash.SHA512 != *tag.Hash.SHA512 {
-				return fmt.Errorf("tag '%s' SHA-512 hash has changed from %s to %s", tag.Ref, *tag.Hash.SHA512, *newTag.Hash.SHA512)
+			if *newTag.SHA512 != *tag.SHA512 {
+				return fmt.Errorf("tag '%s' SHA-512 hash has changed from %s to %s", tag.Ref, *tag.SHA512, *newTag.SHA512)
 			}
 		} else {
-			return fmt.Errorf("tag '%s' has been deleted, was %s", tag.Ref, *tag.Hash.SHA1)
+			return fmt.Errorf("tag '%s' has been deleted, was %s", tag.Ref, *tag.SHA1)
 		}
 	}
 
@@ -141,17 +141,17 @@ func VerifyLocalState(repo *git.Repository, state *gitkit.RepoState, repoConfig 
 	for _, branch := range localState.Branches {
 		newBranch, found := newProtectedBranchesMap[branch.Ref]
 		if found {
-			if newBranch.Hash.SHA1 == nil || branch.Hash.SHA1 == nil {
+			if newBranch.SHA1 == nil || branch.SHA1 == nil {
 				return fmt.Errorf("branch hashes must be set")
 			}
 
-			if newBranch.Hash.SHA512 == nil || branch.Hash.SHA512 == nil {
+			if newBranch.SHA512 == nil || branch.SHA512 == nil {
 				return fmt.Errorf("branch SHA-512 hashes must be set")
 			}
 
-			c, found := state.CommitMap[plumbing.NewHash(*newBranch.Hash.SHA1)]
+			c, found := state.CommitMap[plumbing.NewHash(*newBranch.SHA1)]
 			if !found {
-				return fmt.Errorf("target commit '%s' not found for %s", *newBranch.Hash.SHA1, branch.Ref)
+				return fmt.Errorf("target commit '%s' not found for %s", *newBranch.SHA1, branch.Ref)
 			}
 
 			visited := hashset.New[plumbing.Hash]()
@@ -166,13 +166,13 @@ func VerifyLocalState(repo *git.Repository, state *gitkit.RepoState, repoConfig 
 				current := queue[0]
 				queue = queue[1:]
 
-				if current.Hash.String() == *branch.Hash.SHA1 {
+				if current.Hash.String() == *branch.SHA1 {
 					hashSHA512, err := gitHashSHA512.CommitSum(current.Hash)
 					if err != nil {
 						return err
 					}
 
-					if hex.EncodeToString(hashSHA512) != *branch.Hash.SHA512 {
+					if hex.EncodeToString(hashSHA512) != *branch.SHA512 {
 						return fmt.Errorf("SHA-512 does not match SHA-1 for %s", branch.Ref)
 					}
 
@@ -197,11 +197,11 @@ func VerifyLocalState(repo *git.Repository, state *gitkit.RepoState, repoConfig 
 				}
 			}
 
-			if *branch.Hash.SHA1 != *newBranch.Hash.SHA1 {
-				fmt.Printf("%s: git log -p --full-diff %s...%s\n", branch.Ref, *branch.Hash.SHA1, *newBranch.Hash.SHA1)
+			if *branch.SHA1 != *newBranch.SHA1 {
+				fmt.Printf("%s: git log -p --full-diff %s...%s\n", branch.Ref, *branch.SHA1, *newBranch.SHA1)
 			}
 		} else {
-			return fmt.Errorf("protected branch '%s' has been deleted, was %s", branch.Ref, *branch.Hash.SHA1)
+			return fmt.Errorf("protected branch '%s' has been deleted, was %s", branch.Ref, *branch.SHA1)
 		}
 	}
 
@@ -228,11 +228,9 @@ func computeProtectedBranches(repo *git.Repository, config *RepoConfig, gitHashS
 			hashSHA512 := hex.EncodeToString(h)
 
 			result = append(result, ExemptTag{
-				Ref: reference.Name().String(),
-				Hash: Digests{
-					SHA1:   &hashSHA1,
-					SHA512: &hashSHA512,
-				},
+				Ref:    reference.Name().String(),
+				SHA1:   &hashSHA1,
+				SHA512: &hashSHA512,
 			})
 		}
 

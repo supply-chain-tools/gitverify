@@ -134,11 +134,6 @@ type Repository struct {
 	ExemptTags []ExemptTag `json:"exemptTags"`
 }
 
-type Digests struct {
-	SHA1   *string `json:"sha1,omitempty"`
-	SHA512 *string `json:"sha512,omitempty"`
-}
-
 type After struct {
 	SHA1   *string `json:"sha1,omitempty"`
 	SHA512 *string `json:"sha512,omitempty"`
@@ -643,23 +638,23 @@ func validateExemptTags(exemptTags []ExemptTag, requireSHA512 bool) ([]ExemptTag
 			return nil, fmt.Errorf("invalid exemptTag.ref '%s'", exemptTag.Ref)
 		}
 
-		if exemptTag.Hash.SHA1 == nil && exemptTag.Hash.SHA512 == nil {
-			return nil, fmt.Errorf("either exemptTag.hash.sha1 or exemptTag.hash.sha512 must be set, or both")
+		if exemptTag.SHA1 == nil && exemptTag.SHA512 == nil {
+			return nil, fmt.Errorf("either exemptTag.sha1 or exemptTag.sha512 must be set, or both")
 		}
 
-		if exemptTag.Hash.SHA1 != nil {
-			if !HexSHA1Regex.MatchString(*exemptTag.Hash.SHA1) {
-				return nil, fmt.Errorf("exemptTag.hash.sha1 '%s' must be a 40 character hex", *exemptTag.Hash.SHA1)
+		if exemptTag.SHA1 != nil {
+			if !HexSHA1Regex.MatchString(*exemptTag.SHA1) {
+				return nil, fmt.Errorf("exemptTag.sha1 '%s' must be a 40 character hex", *exemptTag.SHA1)
 			}
 		}
 
-		if requireSHA512 && exemptTag.Hash.SHA512 == nil {
-			return nil, fmt.Errorf("exemptTag.hash.sha512 is missing, but requireSha512 is set")
+		if requireSHA512 && exemptTag.SHA512 == nil {
+			return nil, fmt.Errorf("exemptTag.sha512 is missing, but requireSha512 is set")
 		}
 
-		if exemptTag.Hash.SHA512 != nil {
-			if !HexSHA512Regex.MatchString(*exemptTag.Hash.SHA512) {
-				return nil, fmt.Errorf("exemptTag.hash.sha512 '%s' must be a 128 character hex", *exemptTag.Hash.SHA512)
+		if exemptTag.SHA512 != nil {
+			if !HexSHA512Regex.MatchString(*exemptTag.SHA512) {
+				return nil, fmt.Errorf("exemptTag.sha512 '%s' must be a 128 character hex", *exemptTag.SHA512)
 			}
 		}
 

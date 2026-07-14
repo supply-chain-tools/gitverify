@@ -28,6 +28,7 @@ type ValidateOptions struct {
 var Hex2Regex = regexp.MustCompile("^[a-f0-9]{2}$")
 var HexSHA1Regex = regexp.MustCompile("^[a-f0-9]{40}$")
 var HexSHA512Regex = regexp.MustCompile("^[a-f0-9]{128}$")
+var countersignTagRegex = regexp.MustCompile("^refs/tags/pr/[0-9]+$")
 
 func Verify(repo *git.Repository, state *gitkit.RepoState, repoConfig *RepoConfig, gitHashSHA1 githash.GitHash, gitHashSHA512 githash.GitHash, opts *ValidateOptions) error {
 	commitMetadata, err := computeCommitMetadata(state, repoConfig, gitHashSHA1, gitHashSHA512)
@@ -233,7 +234,7 @@ func validateCommit(commit *object.Commit, state *gitkit.RepoState, commitMetada
 
 			switch signatureType {
 			case SignatureTypePGP:
-				key := repoConfig.trustedForge.pgpPublicKey
+				key := repoConfig.trustedForge.commitPGPPublicKey
 				if key == nil {
 					return fmt.Errorf("wrong signature type PGP for forge commit %s", commit.Hash.String())
 				}
@@ -253,7 +254,7 @@ func validateCommit(commit *object.Commit, state *gitkit.RepoState, commitMetada
 					return err
 				}
 
-				err = validateSSH(content, commit.PGPSignature, id.sshPublicKeys, repoConfig)
+				err = validateSSH(content, commit.PGPSignature, id.commitSSHPublicKeys, repoConfig)
 				if err != nil {
 					return fmt.Errorf("failed to validate commit %s: %w", commit.Hash.String(), err)
 				}
@@ -287,9 +288,9 @@ func validateCommit(commit *object.Commit, state *gitkit.RepoState, commitMetada
 			return err
 		}
 
-		sshPublicKeys := id.sshPublicKeys
+		sshPublicKeys := id.commitSSHPublicKeys
 		if commit.MergeTag != "" {
-			sshPublicKeys = id.counterSignPublicKeys
+			sshPublicKeys = id.countersignCommitSSHPublicKeys
 		}
 
 		err = validateSSH(content, commit.PGPSignature, sshPublicKeys, repoConfig)
@@ -297,9 +298,9 @@ func validateCommit(commit *object.Commit, state *gitkit.RepoState, commitMetada
 			return fmt.Errorf("failed to validate commit %s: %w", commit.Hash.String(), err)
 		}
 	case SignatureTypePGP:
-		pgpPublicKeys := id.pgpPublicKeys
+		pgpPublicKeys := id.commitPGPPublicKeys
 		if commit.MergeTag != "" {
-			pgpPublicKeys = id.countersignPGPPublicKeys
+			pgpPublicKeys = id.countersignCommitPGPPublicKeys
 		}
 
 		err := validateIdentityPGPCommit(commit, pgpPublicKeys, repoConfig)
@@ -338,12 +339,12 @@ func validateCommit(commit *object.Commit, state *gitkit.RepoState, commitMetada
 			if err != nil {
 				return err
 			}
-			err = validateSSH(content, mergeTag.PGPSignature, id.tagSSHPublicKeys, repoConfig)
+			err = validateSSH(content, mergeTag.PGPSignature, id.countersignTagSSHPublicKeys, repoConfig)
 			if err != nil {
 				return fmt.Errorf("failed to validate mergetag in commit %s: %w", commit.Hash.String(), err)
 			}
 		case SignatureTypePGP:
-			err := validateIdentityPGPTag(mergeTag, id.tagPGPPublicKeys, repoConfig)
+			err := validateIdentityPGPTag(mergeTag, id.countersignTagPGPPublicKeys, repoConfig)
 			if err != nil {
 				return err
 			}
@@ -438,9 +439,8 @@ func verifySha512(commitHash plumbing.Hash, targetCommitHash plumbing.Hash, mess
 	return nil
 }
 
-func verifyVersionForTag(tagName string, commit *object.Commit, commitMetadata map[plumbing.Hash]*CommitData) error {
-	// FIXME
-	if strings.HasPrefix(tagName, "pr/") {
+func verifyVersionForTag(tagReference string, tagName string, commit *object.Commit, commitMetadata map[plumbing.Hash]*CommitData) error {
+	if countersignTagRegex.MatchString(tagReference) {
 		return nil
 	}
 
@@ -461,7 +461,7 @@ func verifyVersionForTag(tagName string, commit *object.Commit, commitMetadata m
 		}
 
 		if tagVersions[0] != tagName {
-			return fmt.Errorf("tag name does not match version %s", tagName)
+			return fmt.Errorf("countersigned commit version does not match tag name %s", tagName)
 		}
 
 		if len(commitVersions) != 0 {
@@ -473,7 +473,7 @@ func verifyVersionForTag(tagName string, commit *object.Commit, commitMetadata m
 		}
 
 		if commitVersions[0] != tagName {
-			return fmt.Errorf("tag name does not match version %s", tagName)
+			return fmt.Errorf("commit version does not match tag name %s", tagName)
 		}
 	}
 
@@ -923,6 +923,7 @@ func validateTags(repo *git.Repository, state *gitkit.RepoState, repoConfig *Rep
 func validateTag(tag *plumbing.Reference, state *gitkit.RepoState, repoConfig *RepoConfig, commitMetadata map[plumbing.Hash]*CommitData, gitHashSHA1 githash.GitHash, gitHashSHA512 githash.GitHash, fullVerification bool) error {
 	isExempted := false
 
+	tagReference := tag.Name().String()
 	tagPrefix := "refs/tags/"
 	if !strings.HasPrefix(tag.Name().String(), tagPrefix) {
 		return fmt.Errorf("tag name %s does not start with %s", tag.Name().String(), tagPrefix)
@@ -1009,12 +1010,23 @@ func validateTag(tag *plumbing.Reference, state *gitkit.RepoState, repoConfig *R
 				if err != nil {
 					return err
 				}
-				err = validateSSH(content, t.PGPSignature, id.tagSSHPublicKeys, repoConfig)
+
+				sshKeys := id.tagSSHPublicKeys
+				if countersignTagRegex.MatchString(tagReference) {
+					sshKeys = id.countersignTagSSHPublicKeys
+				}
+
+				err = validateSSH(content, t.PGPSignature, sshKeys, repoConfig)
 				if err != nil {
 					return fmt.Errorf("failed to validate tag %s: %w", tagName, err)
 				}
 			case SignatureTypePGP:
-				err := validateIdentityPGPTag(t, id.tagPGPPublicKeys, repoConfig)
+				pgpKeys := id.tagPGPPublicKeys
+				if countersignTagRegex.MatchString(tagReference) {
+					pgpKeys = id.countersignTagPGPPublicKeys
+				}
+
+				err := validateIdentityPGPTag(t, pgpKeys, repoConfig)
 				if err != nil {
 					return err
 				}
@@ -1048,7 +1060,7 @@ func validateTag(tag *plumbing.Reference, state *gitkit.RepoState, repoConfig *R
 				}
 
 				if repoConfig.requireMatchedVersions {
-					err = verifyVersionForTag(tagName, c, commitMetadata)
+					err = verifyVersionForTag(tagReference, tagName, c, commitMetadata)
 					if err != nil {
 						return err
 					}
@@ -1063,7 +1075,7 @@ func validateTag(tag *plumbing.Reference, state *gitkit.RepoState, repoConfig *R
 
 			c, found := state.CommitMap[tag.Hash()]
 			if !found {
-				return fmt.Errorf("commit %s missing for tag %s", t.Target.String(), tagName)
+				return fmt.Errorf("commit %s missing for tag %s", tag.Hash(), tagName)
 			}
 
 			err := verifyConnectedToAfter(c, state, commitMetadata)
@@ -1078,7 +1090,7 @@ func validateTag(tag *plumbing.Reference, state *gitkit.RepoState, repoConfig *R
 				}
 
 				if repoConfig.requireMatchedVersions {
-					err = verifyVersionForTag(tag.Name().String(), c, commitMetadata)
+					err = verifyVersionForTag(tagReference, tagName, c, commitMetadata)
 					if err != nil {
 						return err
 					}

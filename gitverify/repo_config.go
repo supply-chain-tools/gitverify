@@ -41,21 +41,23 @@ type RepoConfig struct {
 }
 
 type identity struct {
-	email                    string
-	forgeUsername            *string
-	forgeUserId              *string
-	sshPublicKeys            map[string]*ssh.PublicKey
-	tagSSHPublicKeys         map[string]*ssh.PublicKey
-	counterSignPublicKeys    map[string]*ssh.PublicKey
-	pgpPublicKeys            []string
-	tagPGPPublicKeys         []string
-	countersignPGPPublicKeys []string
+	email                          string
+	forgeUsername                  *string
+	forgeUserId                    *string
+	commitSSHPublicKeys            map[string]*ssh.PublicKey
+	tagSSHPublicKeys               map[string]*ssh.PublicKey
+	countersignTagSSHPublicKeys    map[string]*ssh.PublicKey
+	countersignCommitSSHPublicKeys map[string]*ssh.PublicKey
+	commitPGPPublicKeys            []string
+	tagPGPPublicKeys               []string
+	countersignTagPGPPublicKeys    []string
+	countersignCommitPGPPublicKeys []string
 }
 
 type forge struct {
-	email        string
-	pgpPublicKey *string
-	identity     *identity
+	email              string
+	commitPGPPublicKey *string
+	identity           *identity
 }
 
 func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
@@ -143,6 +145,11 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 			return nil, err
 		}
 
+		sshCountersignTagMap, err := createSSSHPublicKeyMap(sshCountersignTagList)
+		if err != nil {
+			return nil, err
+		}
+
 		sshCountersignCommitMap, err := createSSSHPublicKeyMap(sshCountersignCommitList)
 		if err != nil {
 			return nil, err
@@ -207,15 +214,17 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 		}
 
 		identityEntry := identity{
-			email:                    i.Email,
-			forgeUsername:            i.ForgeUsername,
-			forgeUserId:              i.ForgeUserId,
-			sshPublicKeys:            sshCommitMap,
-			tagSSHPublicKeys:         sshTagMap,
-			counterSignPublicKeys:    sshCountersignCommitMap,
-			pgpPublicKeys:            pgpCommitList,
-			tagPGPPublicKeys:         pgpTagList,
-			countersignPGPPublicKeys: pgpCountersignCommitList,
+			email:                          i.Email,
+			forgeUsername:                  i.ForgeUsername,
+			forgeUserId:                    i.ForgeUserId,
+			commitSSHPublicKeys:            sshCommitMap,
+			tagSSHPublicKeys:               sshTagMap,
+			countersignTagSSHPublicKeys:    sshCountersignTagMap,
+			countersignCommitSSHPublicKeys: sshCountersignCommitMap,
+			commitPGPPublicKeys:            pgpCommitList,
+			tagPGPPublicKeys:               pgpTagList,
+			countersignTagPGPPublicKeys:    sshCountersignTagList,
+			countersignCommitPGPPublicKeys: pgpCountersignCommitList,
 		}
 
 		var forgeEmail = ""
@@ -265,7 +274,7 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 		}
 
 		if repo.TrustedForge.PGPPublicKey != nil && repo.TrustedForge.PGPPublicKey.SignCommits {
-			f.pgpPublicKey = &repo.TrustedForge.PGPPublicKey.Key
+			f.commitPGPPublicKey = &repo.TrustedForge.PGPPublicKey.Key
 		}
 
 		if repo.TrustedForge.SSHPublicKey != nil && repo.TrustedForge.SSHPublicKey.SignCommits {
@@ -275,8 +284,8 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 			}
 
 			f.identity = &identity{
-				email:         repo.TrustedForge.Email,
-				sshPublicKeys: sshPublicKeys,
+				email:               repo.TrustedForge.Email,
+				commitSSHPublicKeys: sshPublicKeys,
 			}
 		}
 

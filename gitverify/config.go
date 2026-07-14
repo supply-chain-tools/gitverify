@@ -17,6 +17,14 @@ import (
 // TODO improve
 const tagRefRegex = "^refs/tags/.+$"
 
+type hashAlgorithm string
+
+const (
+	hashAlgorithmNone   hashAlgorithm = "none"
+	hashAlgorithmSHA255 hashAlgorithm = "sha256"
+	hashAlgorithmSHA512 hashAlgorithm = "sha512"
+)
+
 type Config struct {
 	Type              string         `json:"_type"`
 	Identities        []Identity     `json:"identities"`
@@ -96,10 +104,11 @@ type ForgeIdentity struct {
 }
 
 type Rules struct {
-	AllowSSHSignatures     *bool `json:"allowSshSignatures"`
-	RequireSSHUserPresent  *bool `json:"requireSshUserPresent"`
-	RequireSSHUserVerified *bool `json:"requireSshUserVerified"`
-	AllowSSHSHA256         *bool `json:"allowSshSha256"`
+	AllowSSHSignatures     *bool           `json:"allowSshSignatures"`
+	RequireSSHUserPresent  *bool           `json:"requireSshUserPresent"`
+	RequireSSHUserVerified *bool           `json:"requireSshUserVerified"`
+	SSHHashAlgorithms      []hashAlgorithm `json:"sshHashAlgorithms"`
+	SSHKeyFormats          []string        `json:"sshKeyFormats"`
 
 	AllowPGPSignatures *bool `json:"allowPGPSignatures"`
 
@@ -107,9 +116,9 @@ type Rules struct {
 	RequireMergeCommits   *bool `json:"requireMergeCommits"`
 	RequireCountersigning *bool `json:"requireCountersigning"`
 
-	RequireSHA512          *bool `json:"requireSha512"`
-	RequireMatchedVersions *bool `json:"requireMatchedVersions"`
-	VerifyAllCommits       *bool `json:"verifyAllCommits"`
+	RequireHash            *string `json:"requireHash"`
+	RequireMatchedVersions *bool   `json:"requireMatchedVersions"`
+	VerifyAllCommits       *bool   `json:"verifyAllCommits"`
 
 	TrustForge *bool `json:"trustForge"`
 
@@ -170,6 +179,8 @@ type ParsedRules struct {
 	RequireSSHUserPresent  bool
 	RequireSSHUserVerified bool
 	AllowSSHSHA256         bool
+	SSHHashAlgorithms      hashset.Set[hashAlgorithm]
+	SSHKeyFormats          hashset.Set[string]
 
 	AllowPGPSignatures bool
 
@@ -177,7 +188,9 @@ type ParsedRules struct {
 	RequireMergeCommits   bool
 	RequireCountersigning bool
 
-	RequireSHA512          bool
+	RequireHash   hashAlgorithm
+	RequireSHA512 bool
+
 	RequireMatchedVersions bool
 	VerifyAllCommits       bool
 
@@ -344,16 +357,19 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 			return nil, err
 		}
 
+		defaultSSHHashAlgorithms := hashset.New[hashAlgorithm](hashAlgorithmSHA512)
+
 		defaultRules := ParsedRules{
 			AllowSSHSignatures:                         true,
 			RequireSSHUserPresent:                      false,
 			RequireSSHUserVerified:                     false,
-			AllowSSHSHA256:                             false,
+			SSHHashAlgorithms:                          defaultSSHHashAlgorithms,
+			SSHKeyFormats:                              defaultSSHKeyFormats(),
 			AllowPGPSignatures:                         true,
 			RequireSignedTags:                          true,
 			RequireMergeCommits:                        true,
 			RequireCountersigning:                      false,
-			RequireSHA512:                              false,
+			RequireHash:                                "none",
 			RequireMatchedVersions:                     false,
 			VerifyAllCommits:                           false,
 			TrustForge:                                 false,
@@ -414,16 +430,16 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 			return nil, fmt.Errorf("trustForge cannot be used with requireCountersigning")
 		}
 
-		if parsedRules.RequireSHA512 == true && parsedRules.RequireCountersigning == false {
-			return nil, fmt.Errorf("requireSha512 can only be used with requireCountersigning")
+		if parsedRules.RequireHash != hashAlgorithmNone && parsedRules.RequireCountersigning == false {
+			return nil, fmt.Errorf("requireHash can only be used with requireCountersigning")
 		}
 
-		if parsedRules.RequireSHA512 == true && parsedRules.AllowSSHSHA256 == true {
-			return nil, fmt.Errorf("allowSshSha256 cannot be used with requireSha512")
+		if parsedRules.RequireHash != hashAlgorithmNone && parsedRules.AllowSSHSHA256 == true {
+			return nil, fmt.Errorf("requireHash cannot be used with sshHashAlgorithms 'sha256'")
 		}
 
-		if parsedRules.RequireSHA512 == true && parsedRules.AllowPGPSignatures == true {
-			return nil, fmt.Errorf("requireSha512 does not currently support allowPgpSignatures")
+		if parsedRules.RequireHash != hashAlgorithmNone && parsedRules.AllowPGPSignatures == true {
+			return nil, fmt.Errorf("requireHash does not currently support allowPgpSignatures")
 		}
 
 		if parsedRules.RequireDistinctTagIdentities == true && parsedRules.RequireSignedTags == false {
@@ -682,13 +698,33 @@ func combineContributors(global []string, local []string) (hashset.Set[string], 
 }
 
 func combineRules(defaultRules ParsedRules, global *Rules, local *Rules) (ParsedRules, error) {
-	rules := overwriteExisting(defaultRules, global)
-	rules = overwriteExisting(rules, local)
+	allowedSSHKeyFormats := defaultSSHKeyFormats()
+	allowedSSHHashAlgorithms := hashset.New[hashAlgorithm](hashAlgorithmSHA512, hashAlgorithmSHA255)
+
+	rules, err := overwriteExisting(defaultRules, global, allowedSSHKeyFormats, allowedSSHHashAlgorithms)
+	if err != nil {
+		return defaultRules, err
+	}
+
+	rules, err = overwriteExisting(rules, local, allowedSSHKeyFormats, allowedSSHHashAlgorithms)
+	if err != nil {
+		return defaultRules, err
+	}
+
+	if rules.RequireHash == hashAlgorithmSHA512 {
+		rules.RequireSHA512 = true
+	} else {
+		rules.RequireSHA512 = false
+	}
+
+	if rules.SSHHashAlgorithms.Contains(hashAlgorithmSHA255) {
+		rules.AllowSSHSHA256 = true
+	}
 
 	return rules, nil
 }
 
-func overwriteExisting(existing ParsedRules, rules *Rules) ParsedRules {
+func overwriteExisting(existing ParsedRules, rules *Rules, allowedSSHKeyFormats hashset.Set[string], allowedSSHHashAlgorithms hashset.Set[hashAlgorithm]) (ParsedRules, error) {
 	if rules != nil {
 		if rules.AllowSSHSignatures != nil {
 			existing.AllowSSHSignatures = *rules.AllowSSHSignatures
@@ -702,8 +738,32 @@ func overwriteExisting(existing ParsedRules, rules *Rules) ParsedRules {
 			existing.RequireSSHUserVerified = *rules.RequireSSHUserVerified
 		}
 
-		if rules.AllowSSHSHA256 != nil {
-			existing.AllowSSHSHA256 = *rules.AllowSSHSHA256
+		if rules.SSHKeyFormats != nil {
+			newSet := hashset.New[string]()
+			for _, format := range rules.SSHKeyFormats {
+				if !allowedSSHKeyFormats.Contains(format) {
+					return existing, fmt.Errorf("sshKeyFormats: incorrect format '%s'", format)
+				}
+				newSet.Add(format)
+			}
+
+			existing.SSHKeyFormats = newSet
+		}
+
+		if rules.SSHHashAlgorithms != nil {
+			newSet := hashset.New[hashAlgorithm]()
+			for _, hash := range rules.SSHHashAlgorithms {
+				if !allowedSSHHashAlgorithms.Contains(hash) {
+					return existing, fmt.Errorf("sshHashAlgorithms: incorrect hash '%s'", hash)
+				}
+				newSet.Add(hash)
+			}
+
+			if !newSet.Contains(hashAlgorithmSHA512) {
+				return existing, fmt.Errorf("sshHashAlgorithms: sha512 must be allowed")
+			}
+
+			existing.SSHHashAlgorithms = newSet
 		}
 
 		if rules.AllowPGPSignatures != nil {
@@ -722,8 +782,14 @@ func overwriteExisting(existing ParsedRules, rules *Rules) ParsedRules {
 			existing.RequireCountersigning = *rules.RequireCountersigning
 		}
 
-		if rules.RequireSHA512 != nil {
-			existing.RequireSHA512 = *rules.RequireSHA512
+		if rules.RequireHash != nil {
+			if *rules.RequireHash == string(hashAlgorithmNone) {
+				existing.RequireHash = hashAlgorithmNone
+			} else if *rules.RequireHash == string(hashAlgorithmSHA512) {
+				existing.RequireHash = hashAlgorithmSHA512
+			} else {
+				return existing, fmt.Errorf("unknown requireHash '%s'", *rules.RequireHash)
+			}
 		}
 
 		if rules.RequireMatchedVersions != nil {
@@ -763,7 +829,7 @@ func overwriteExisting(existing ParsedRules, rules *Rules) ParsedRules {
 		}
 	}
 
-	return existing
+	return existing, nil
 }
 
 func combineProtectedBranches(global []string, local []string) (hashset.Set[string], error) {

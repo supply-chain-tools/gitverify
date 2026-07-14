@@ -135,22 +135,22 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 			}
 		}
 
-		sshCommitMap, err := createSSSHPublicKeyMap(sshCommitList)
+		sshCommitMap, err := createSSSHPublicKeyMap(sshCommitList, repo.Rules.SSHKeyFormats)
 		if err != nil {
 			return nil, err
 		}
 
-		sshTagMap, err := createSSSHPublicKeyMap(sshTagList)
+		sshTagMap, err := createSSSHPublicKeyMap(sshTagList, repo.Rules.SSHKeyFormats)
 		if err != nil {
 			return nil, err
 		}
 
-		sshCountersignTagMap, err := createSSSHPublicKeyMap(sshCountersignTagList)
+		sshCountersignTagMap, err := createSSSHPublicKeyMap(sshCountersignTagList, repo.Rules.SSHKeyFormats)
 		if err != nil {
 			return nil, err
 		}
 
-		sshCountersignCommitMap, err := createSSSHPublicKeyMap(sshCountersignCommitList)
+		sshCountersignCommitMap, err := createSSSHPublicKeyMap(sshCountersignCommitList, repo.Rules.SSHKeyFormats)
 		if err != nil {
 			return nil, err
 		}
@@ -278,7 +278,7 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 		}
 
 		if repo.TrustedForge.SSHPublicKey != nil && repo.TrustedForge.SSHPublicKey.SignCommits {
-			sshPublicKeys, err := createSSSHPublicKeyMap([]string{repo.TrustedForge.SSHPublicKey.Key})
+			sshPublicKeys, err := createSSSHPublicKeyMap([]string{repo.TrustedForge.SSHPublicKey.Key}, repo.Rules.SSHKeyFormats)
 			if err != nil {
 				return nil, err
 			}
@@ -402,10 +402,10 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 	}, nil
 }
 
-func createSSSHPublicKeyMap(sshPublicKeys []string) (map[string]*ssh.PublicKey, error) {
+func createSSSHPublicKeyMap(sshPublicKeys []string, allowedSSHKeyFormats hashset.Set[string]) (map[string]*ssh.PublicKey, error) {
 	keyMap := make(map[string]*ssh.PublicKey)
 	for _, sshPublicKey := range sshPublicKeys {
-		publicKey, rawKey, err := decodeAndParseSSHPublicKey(sshPublicKey)
+		publicKey, rawKey, err := decodeAndParseSSHPublicKey(sshPublicKey, allowedSSHKeyFormats)
 		if err != nil {
 			return nil, err
 		}

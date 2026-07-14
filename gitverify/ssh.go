@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/supply-chain-tools/go-sandbox/hashset"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -83,8 +84,8 @@ func getSignatureFormat(sshSig *SSHSig) (*string, error) {
 	return &keyType, err
 }
 
-func verifySSHSignature(key string, signature string, data string, expectedNamespace string, allowSHA256 bool, requireSHA512 bool) error {
-	publicKey, _, err := decodeAndParseSSHPublicKey(key)
+func verifySSHSignature(key string, signature string, data string, expectedNamespace string, allowSHA256 bool, requireSHA512 bool, allowedSSHKeyFormats hashset.Set[string]) error {
+	publicKey, _, err := decodeAndParseSSHPublicKey(key, allowedSSHKeyFormats)
 	if err != nil {
 		return err
 	}
@@ -102,7 +103,7 @@ func verifySSHSignature(key string, signature string, data string, expectedNames
 	return nil
 }
 
-func decodeAndParseSSHPublicKey(key string) (ssh.PublicKey, []byte, error) {
+func decodeAndParseSSHPublicKey(key string, allowedSSHKeyFormats hashset.Set[string]) (ssh.PublicKey, []byte, error) {
 	parts := strings.Split(key, " ")
 	if len(parts) < 2 {
 		return nil, nil, fmt.Errorf("invalid SSH public key")
@@ -122,7 +123,7 @@ func decodeAndParseSSHPublicKey(key string) (ssh.PublicKey, []byte, error) {
 		return nil, nil, fmt.Errorf("inconsistent format for SSH public key '%s'", key)
 	}
 
-	if !isSupportedKeyFormat(publicKey.Type()) {
+	if !isSupportedKeyFormat(publicKey.Type(), allowedSSHKeyFormats) {
 		return nil, nil, fmt.Errorf("unsupported key format '%s'", publicKey.Type())
 	}
 
@@ -259,25 +260,19 @@ func keyTypeFromSignatureFormat(format string) (string, error) {
 	}
 }
 
-func isSupportedKeyFormat(format string) bool {
-	switch format {
-	case ssh.KeyAlgoSKED25519:
-		return true
-	case ssh.KeyAlgoSKECDSA256:
-		return true
-	case ssh.KeyAlgoED25519:
-		return true
-	case ssh.KeyAlgoECDSA256:
-		return true
-	case ssh.KeyAlgoECDSA384:
-		return true
-	case ssh.KeyAlgoECDSA521:
-		return true
-	case "ssh-rsa":
-		return true
-	default:
-		return false
-	}
+func isSupportedKeyFormat(format string, allowedSSHKeyFormats hashset.Set[string]) bool {
+	return allowedSSHKeyFormats.Contains(format)
+}
+
+func defaultSSHKeyFormats() hashset.Set[string] {
+	return hashset.New[string](
+		ssh.KeyAlgoSKED25519,
+		ssh.KeyAlgoSKECDSA256,
+		ssh.KeyAlgoED25519,
+		ssh.KeyAlgoECDSA256,
+		ssh.KeyAlgoECDSA384,
+		ssh.KeyAlgoECDSA521,
+		ssh.KeyAlgoRSA)
 }
 
 func shouldHaveEmptyRest(format string) bool {

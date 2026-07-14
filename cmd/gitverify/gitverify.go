@@ -434,10 +434,10 @@ func verify(opts *VerifyOptions) (string, int, error) {
 		}
 	}
 
-	return buildFinalOutput(repo, repoDir, repoUri, state, repoConfig)
+	return buildFinalOutput(repo, repoDir, repoUri, state, repoConfig, validateOptions)
 }
 
-func buildFinalOutput(repo *git.Repository, repoDir string, repoUri string, state *gitkit.RepoState, repoConfig *gitverify.RepoConfig) (string, int, error) {
+func buildFinalOutput(repo *git.Repository, repoDir string, repoUri string, state *gitkit.RepoState, repoConfig *gitverify.RepoConfig, validateOpts *gitverify.ValidateOptions) (string, int, error) {
 	sb := strings.Builder{}
 
 	head, err := repo.Head()
@@ -513,33 +513,6 @@ func buildFinalOutput(repo *git.Repository, repoDir string, repoUri string, stat
 
 	sb.WriteString(fmt.Sprintf("repository root: %s\n", rel))
 	sb.WriteString(fmt.Sprintf("URI: %s\n", repoUri))
-	matchingRefs := append(matchingHeadRefs, matchingTagRefs...)
-	matchingRefs = append(matchingRefs, matchingRemoteRefs...)
-	matchingRefs = append(matchingRefs, commit.String())
-	if strings.HasPrefix(referenceName, "refs/heads/") {
-		ref := plumbing.NewReferenceFromStrings(referenceName, head.Hash().String())
-
-		protected, branchName := gitverify.IsProtected(ref, repoConfig)
-		suffix := ""
-		if protected {
-			suffix = " [protected]"
-		}
-
-		if len(matchingRefs) > 0 {
-			suffix += fmt.Sprintf(" (%s)", strings.Join(matchingRefs, ", "))
-		}
-
-		sb.WriteString(fmt.Sprintf("on branch %s%s\n", branchName, suffix))
-	} else if head.Type() == plumbing.HashReference {
-		suffix := ""
-		if len(matchingRefs) > 0 {
-			suffix += fmt.Sprintf(" (%s)", strings.Join(matchingRefs, ","))
-		}
-
-		sb.WriteString(fmt.Sprintf("on commit %s%s\n", head.Hash().String(), suffix))
-	} else {
-		return "", exitCodeErr, fmt.Errorf("HEAD broken")
-	}
 
 	worktree, err := repo.Worktree()
 	if err != nil {
@@ -551,12 +524,63 @@ func buildFinalOutput(repo *git.Repository, repoDir string, repoUri string, stat
 		return "", exitCodeErr, err
 	}
 
-	if status.IsClean() {
-		sb.WriteString("working tree clean\nOK\n")
-		return sb.String(), exitCodeOK, nil
+	if validateOpts == nil {
+		matchingRefs := append(matchingHeadRefs, matchingTagRefs...)
+		matchingRefs = append(matchingRefs, matchingRemoteRefs...)
+		if strings.HasPrefix(referenceName, "refs/heads/") {
+			ref := plumbing.NewReferenceFromStrings(referenceName, head.Hash().String())
+			matchingRefs = append(matchingRefs, "commit: "+commit.String())
+
+			protected, branchName := gitverify.IsProtected(ref, repoConfig)
+			suffix := ""
+			if protected {
+				suffix = " [protected]"
+			}
+
+			if len(matchingRefs) > 0 {
+				suffix += fmt.Sprintf(" (%s)", strings.Join(matchingRefs, ", "))
+			}
+
+			sb.WriteString(fmt.Sprintf("on branch %s%s\n", branchName, suffix))
+		} else if head.Type() == plumbing.HashReference {
+			suffix := ""
+			if len(matchingRefs) > 0 {
+				suffix += fmt.Sprintf(" (%s)", strings.Join(matchingRefs, ","))
+			}
+
+			sb.WriteString(fmt.Sprintf("on commit %s%s\n", head.Hash().String(), suffix))
+		} else {
+			return "", exitCodeErr, fmt.Errorf("HEAD broken")
+		}
+
+		m := "OK"
+		if status.IsClean() {
+			sb.WriteString(fmt.Sprintf("working tree clean\n%s\n", m))
+			return sb.String(), exitCodeOK, nil
+		}
+
+		sb.WriteString(fmt.Sprintf("there are worktree changes\notherwise %s\n", m))
+		return sb.String(), exitCodeWorktreeChanges, nil
 	}
 
-	sb.WriteString("there are worktree changes\notherwise OK\n")
+	prefix := ""
+	if validateOpts.InsecurePartialVerification {
+		prefix = "[insecure] "
+	}
+
+	if validateOpts.VerifyAtHEAD {
+		m := prefix + "partial verification OK"
+		if status.IsClean() {
+			sb.WriteString(fmt.Sprintf("working tree clean\n%s\n", m))
+			return sb.String(), exitCodeOK, nil
+		}
+
+		sb.WriteString(fmt.Sprintf("there are worktree changes\notherwise %s\n", m))
+		return sb.String(), exitCodeWorktreeChanges, nil
+	}
+
+	m := prefix + "partial detached verification OK"
+	sb.WriteString(fmt.Sprintf("%s\n", m))
 	return sb.String(), exitCodeWorktreeChanges, nil
 }
 

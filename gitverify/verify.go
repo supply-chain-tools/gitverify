@@ -565,6 +565,11 @@ func validateOpts(opts *ValidateOptions, repo *git.Repository, state *gitkit.Rep
 		}
 
 		if opts.InsecurePartialVerification && opts.Commit == "" && opts.Branch == "" {
+			if opts.VerifyAtHEAD {
+				if tagHash.String() != headHash.String() {
+					return fmt.Errorf("HEAD does not point to the target commit %s", opts.Commit)
+				}
+			}
 			return nil
 		}
 	}

@@ -81,6 +81,12 @@ is on branch 'main' and that the commit is a descendant of 'after'
 
 var packRegex = regexp.MustCompile("^pack-[a-f0-9]{40}\\.(pack|idx|rev|mtimes)$")
 
+const (
+	exitCodeOK              = 0
+	exitCodeWorktreeChanges = 1
+	exitCodeErr             = 3
+)
+
 func main() {
 	flag.Usage = func() {
 		fmt.Println(usage)
@@ -89,7 +95,7 @@ func main() {
 	err := checkForUnsupportedEnvironmentVariables()
 	if err != nil {
 		printError(err)
-		os.Exit(1)
+		os.Exit(exitCodeErr)
 	}
 
 	command := "verify"
@@ -105,42 +111,45 @@ func main() {
 		opts, err := parseVerifyOptions(os.Args)
 		if err != nil {
 			printError(fmt.Errorf("failed to parse input: %w", err))
-			os.Exit(1)
+			os.Exit(exitCodeErr)
 		}
 
-		err = verify(opts)
+		outputString, exitCode, err := verify(opts)
 		if err != nil {
 			printError(fmt.Errorf("verification failed: %w", err))
-			os.Exit(1)
+			os.Exit(exitCodeErr)
 		}
+
+		fmt.Print(outputString)
+		os.Exit(exitCode)
 	case "after-candidates":
 		opts, err := parseGenerateOptions(os.Args[2:])
 		if err != nil {
 			printError(fmt.Errorf("failed to parse input: %w", err))
-			os.Exit(1)
+			os.Exit(exitCodeErr)
 		}
 
 		err = afterCandidates(opts)
 		if err != nil {
 			printError(fmt.Errorf("after-candidates failed: %w", err))
-			os.Exit(1)
+			os.Exit(exitCodeErr)
 		}
 	case "exempt-tags":
 		opts, err := parseGenerateOptions(os.Args[2:])
 		if err != nil {
 			printError(fmt.Errorf("failed to parse input: %w", err))
-			os.Exit(1)
+			os.Exit(exitCodeErr)
 		}
 
 		result, err := exemptTags(opts)
 		if err != nil {
 			printError(fmt.Errorf("failed to get exempt tags: %w", err))
-			os.Exit(1)
+			os.Exit(exitCodeErr)
 		}
 		fmt.Println(result)
 	default:
 		printError(fmt.Errorf("unknown command: %s", command))
-		os.Exit(1)
+		os.Exit(exitCodeErr)
 	}
 }
 
@@ -221,7 +230,7 @@ func parseVerifyOptions(osArgs []string) (*VerifyOptions, error) {
 	err := flags.Parse(args)
 	if err != nil || help || h {
 		fmt.Println(usage)
-		os.Exit(0)
+		os.Exit(exitCodeOK)
 	}
 
 	if len(flags.Args()) > 0 {
@@ -232,9 +241,9 @@ func parseVerifyOptions(osArgs []string) (*VerifyOptions, error) {
 		err := printVersion()
 		if err != nil {
 			print("failed to print version: ", err.Error(), "\n")
-			os.Exit(1)
+			os.Exit(exitCodeErr)
 		}
-		os.Exit(0)
+		os.Exit(exitCodeOK)
 	}
 
 	configureLogger(debugMode)
@@ -314,7 +323,7 @@ func parseGenerateOptions(args []string) (*GenerateOptions, error) {
 	err := flags.Parse(args)
 	if err != nil || help || h {
 		fmt.Println(usage)
-		os.Exit(0)
+		os.Exit(exitCodeOK)
 	}
 
 	if len(flags.Args()) > 0 {
@@ -367,23 +376,21 @@ func configureLogger(debugMode bool) {
 	slog.SetDefault(logger)
 }
 
-func verify(opts *VerifyOptions) error {
+func verify(opts *VerifyOptions) (string, int, error) {
 	repoDir := opts.repoDir
 	validateOptions := opts.validateOptions
 	configFilePath := opts.configFilePath
 	repoUri := opts.repoUri
 	localState := opts.localState
 
-	fmt.Println("validating...")
-
 	repo, err := gitkit.OpenRepoInLocalPath(repoDir)
 	if err != nil {
-		return err
+		return "", exitCodeErr, err
 	}
 
 	err = checkForUnsupportedGitPaths(repoDir)
 	if err != nil {
-		return err
+		return "", exitCodeErr, err
 	}
 
 	state := gitkit.LoadRepoState(repo)
@@ -395,40 +402,162 @@ func verify(opts *VerifyOptions) error {
 	var repoConfig *gitverify.RepoConfig
 	repoConfig, repoUri, err = loadRepoConfig(repo, configFilePath, repoUri)
 	if err != nil {
-		return err
+		return "", exitCodeErr, err
 	}
 
 	err = gitverify.Verify(repo, state, repoConfig, sha1Hash, sha512Hash, validateOptions)
 	if err != nil {
-		return err
+		return "", exitCodeErr, err
 	}
 
 	if localState {
 		if configFilePath == "" {
 			forge, org, repoName, err := gitverify.InferForgeOrgAndRepo(repo)
 			if err != nil {
-				return err
+				return "", exitCodeErr, err
 			}
 
 			localStatePath, err = gitverify.GetLocalStatePath(forge, org, repoName)
 			if err != nil {
-				return err
+				return "", exitCodeErr, err
 			}
 		}
 
 		err = gitverify.VerifyLocalState(repo, state, repoConfig, repoUri, localStatePath, sha1Hash, sha512Hash)
 		if err != nil {
-			return fmt.Errorf("failed to verify local state: %w", err)
+			return "", exitCodeErr, fmt.Errorf("failed to verify local state: %w", err)
 		}
 
 		err = gitverify.SaveLocalState(repo, state, repoConfig, repoUri, localStatePath, sha1Hash, sha512Hash)
 		if err != nil {
-			return fmt.Errorf("failed to save local state: %w", err)
+			return "", exitCodeErr, fmt.Errorf("failed to save local state: %w", err)
 		}
 	}
 
-	fmt.Println("OK")
-	return nil
+	return buildFinalOutput(repo, repoDir, repoUri, state, repoConfig)
+}
+
+func buildFinalOutput(repo *git.Repository, repoDir string, repoUri string, state *gitkit.RepoState, repoConfig *gitverify.RepoConfig) (string, int, error) {
+	sb := strings.Builder{}
+
+	head, err := repo.Head()
+	if err != nil {
+		return "", exitCodeErr, err
+	}
+
+	referenceName := head.Name().String()
+
+	commit := head.Hash()
+	matchingTagRefs := make([]string, 0)
+	matchingRemoteRefs := make([]string, 0)
+	matchingHeadRefs := make([]string, 0)
+	if commit.String() != "" {
+		refs, err := repo.References()
+		if err != nil {
+			return "", exitCodeErr, err
+		}
+
+		err = refs.ForEach(func(reference *plumbing.Reference) error {
+			if reference.Type() == plumbing.HashReference {
+				protected, branchName := gitverify.IsProtected(reference, repoConfig)
+
+				suffix := ""
+				if protected {
+					suffix = " [protected]"
+				}
+				if branchName != "" {
+					if reference.Hash() == commit {
+						if strings.HasPrefix(reference.Name().String(), "refs/heads/") {
+							if referenceName != reference.Name().String() {
+								matchingHeadRefs = append(matchingHeadRefs, branchName+suffix)
+							}
+						} else {
+							referenceName := strings.TrimPrefix(reference.Name().String(), "refs/remotes/")
+							matchingRemoteRefs = append(matchingRemoteRefs, referenceName+suffix)
+						}
+					}
+				}
+
+				if strings.HasPrefix(reference.Name().String(), "refs/tags/") {
+					t, isAnnotatedTag := state.TagMap[reference.Hash()]
+
+					tagName := strings.TrimPrefix(reference.Name().String(), "refs/tags/")
+
+					if isAnnotatedTag {
+						if t.Target.String() == commit.String() {
+							matchingTagRefs = append(matchingTagRefs, "tag: "+tagName)
+						}
+					} else {
+						if reference.Hash() == commit {
+							matchingTagRefs = append(matchingTagRefs, "tag: "+tagName)
+						}
+					}
+				}
+			}
+
+			return nil
+		})
+		if err != nil {
+			return "", exitCodeErr, err
+		}
+	}
+
+	dir, err := os.Getwd()
+	if err != nil {
+		return "", exitCodeErr, err
+	}
+	rel, err := filepath.Rel(dir, repoDir)
+	if err != nil {
+		return "", exitCodeErr, err
+	}
+
+	sb.WriteString(fmt.Sprintf("repository root: %s\n", rel))
+	sb.WriteString(fmt.Sprintf("URI: %s\n", repoUri))
+	matchingRefs := append(matchingHeadRefs, matchingTagRefs...)
+	matchingRefs = append(matchingRefs, matchingRemoteRefs...)
+	matchingRefs = append(matchingRefs, commit.String())
+	if strings.HasPrefix(referenceName, "refs/heads/") {
+		ref := plumbing.NewReferenceFromStrings(referenceName, head.Hash().String())
+
+		protected, branchName := gitverify.IsProtected(ref, repoConfig)
+		suffix := ""
+		if protected {
+			suffix = " [protected]"
+		}
+
+		if len(matchingRefs) > 0 {
+			suffix += fmt.Sprintf(" (%s)", strings.Join(matchingRefs, ", "))
+		}
+
+		sb.WriteString(fmt.Sprintf("on branch %s%s\n", branchName, suffix))
+	} else if head.Type() == plumbing.HashReference {
+		suffix := ""
+		if len(matchingRefs) > 0 {
+			suffix += fmt.Sprintf(" (%s)", strings.Join(matchingRefs, ","))
+		}
+
+		sb.WriteString(fmt.Sprintf("on commit %s%s\n", head.Hash().String(), suffix))
+	} else {
+		return "", exitCodeErr, fmt.Errorf("HEAD broken")
+	}
+
+	worktree, err := repo.Worktree()
+	if err != nil {
+		return "", exitCodeErr, err
+	}
+
+	status, err := worktree.Status()
+	if err != nil {
+		return "", exitCodeErr, err
+	}
+
+	if status.IsClean() {
+		sb.WriteString("working tree clean\nOK\n")
+		return sb.String(), exitCodeOK, nil
+	}
+
+	sb.WriteString("there are worktree changes\notherwise OK\n")
+	return sb.String(), exitCodeWorktreeChanges, nil
 }
 
 func checkForUnsupportedGitPaths(repoDir string) error {

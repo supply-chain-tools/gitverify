@@ -608,7 +608,7 @@ func validateOpts(opts *ValidateOptions, repo *git.Repository, state *gitkit.Rep
 
 		branchFound := false
 		err = remotes.ForEach(func(reference *plumbing.Reference) error {
-			isProtected, branchName := isProtected(reference, config)
+			isProtected, branchName := IsProtected(reference, config)
 
 			if branchName == opts.Branch {
 				branchFound = true
@@ -779,7 +779,7 @@ func validateBranches(repo *git.Repository, state *gitkit.RepoState, commitMetad
 	}
 
 	err = remotes.ForEach(func(reference *plumbing.Reference) error {
-		isProtected, branchName := isProtected(reference, config)
+		isProtected, branchName := IsProtected(reference, config)
 
 		if isProtected {
 			err := validateProtectedBranch(reference, branchName, state, commitMetadata, config, gitHashSHA512)
@@ -1301,7 +1301,7 @@ func buildContent(commit *object.Commit) (string, error) {
 	return string(data), nil
 }
 
-func isProtected(reference *plumbing.Reference, config *RepoConfig) (bool, string) {
+func IsProtected(reference *plumbing.Reference, config *RepoConfig) (bool, string) {
 	isProtected := false
 	var branchName string
 	referenceName := reference.Name().String()

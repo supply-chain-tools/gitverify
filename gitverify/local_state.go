@@ -216,7 +216,7 @@ func computeProtectedBranches(repo *git.Repository, config *RepoConfig, gitHashS
 
 	result := make([]ExemptTag, 0)
 	err = remotes.ForEach(func(reference *plumbing.Reference) error {
-		isProtected, _ := isProtected(reference, config)
+		isProtected, _ := IsProtected(reference, config)
 
 		if isProtected {
 

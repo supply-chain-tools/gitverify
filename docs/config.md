@@ -70,9 +70,7 @@
       "exemptTags": [
         {
           "ref": "refs/tags/0.0.1",
-          "hash": {
-            "sha1": "1f46f2053221c040ce5bcba0239bc09214a37658"
-          }
+          "sha1": "1f46f2053221c040ce5bcba0239bc09214a37658"
         }
       ]
     }
@@ -180,7 +178,7 @@ When `requireMergeCommits` is set, only merge commits are allowed into the prote
 Generate `repositories.exemptTags`:
 ```sh
 $ gitverify exempt-tags
-[{"ref":"refs/tags/0.0.1","hash":{"sha1":"1f46f2053221c040ce5bcba0239bc09214a37658"}}]
+[{"ref":"refs/tags/0.0.1","sha1":"1f46f2053221c040ce5bcba0239bc09214a37658"}]
 ```
 
 Generate candidates for `after`

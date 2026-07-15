@@ -253,16 +253,12 @@ func parseVerifyOptions(osArgs []string) (*VerifyOptions, error) {
 		return nil, err
 	}
 
-	if branch != "" && commit == "" {
-		return nil, fmt.Errorf("when using --branch, --commit must be specified")
+	if branch != "" && (commit == "" && tag == "") {
+		return nil, fmt.Errorf("when using --branch, --commit or --tag must be specified")
 	}
 
-	if verifyAtTip && commit == "" {
-		return nil, fmt.Errorf("when using --verify-at-tip, --commit must be specified")
-	}
-
-	if verifyAtTip && branch == "" {
-		return nil, fmt.Errorf("when using --verify-at-tip, --branch must be specified")
+	if verifyAtTip && (commit == "" && tag == "") {
+		return nil, fmt.Errorf("when using --verify-at-tip, --commit or --tag must be specified")
 	}
 
 	validateOptions := &gitverify.ValidateOptions{

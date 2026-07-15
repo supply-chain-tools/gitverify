@@ -112,9 +112,10 @@ type Rules struct {
 
 	AllowPGPSignatures *bool `json:"allowPGPSignatures"`
 
-	RequireSignedTags     *bool `json:"requireSignedTags"`
-	RequireMergeCommits   *bool `json:"requireMergeCommits"`
-	RequireCountersigning *bool `json:"requireCountersigning"`
+	RequireSignedTags                  *bool `json:"requireSignedTags"`
+	RequireMergeCommits                *bool `json:"requireMergeCommits"`
+	RequireCountersigning              *bool `json:"requireCountersigning"`
+	RequireTagsToBeOnProtectedBranches *bool `json:"requireTagsToBeOnProtectedBranches"`
 
 	RequireHash            *string `json:"requireHash"`
 	RequireMatchedVersions *bool   `json:"requireMatchedVersions"`
@@ -184,9 +185,10 @@ type ParsedRules struct {
 
 	AllowPGPSignatures bool
 
-	RequireSignedTags     bool
-	RequireMergeCommits   bool
-	RequireCountersigning bool
+	RequireSignedTags                  bool
+	RequireMergeCommits                bool
+	RequireCountersigning              bool
+	RequireTagsToBeOnProtectedBranches bool
 
 	RequireHash   hashAlgorithm
 	RequireSHA512 bool
@@ -369,6 +371,7 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 			RequireSignedTags:                          true,
 			RequireMergeCommits:                        true,
 			RequireCountersigning:                      false,
+			RequireTagsToBeOnProtectedBranches:         true,
 			RequireHash:                                "none",
 			RequireMatchedVersions:                     false,
 			VerifyAllCommits:                           false,
@@ -780,6 +783,10 @@ func overwriteExisting(existing ParsedRules, rules *Rules, allowedSSHKeyFormats 
 
 		if rules.RequireCountersigning != nil {
 			existing.RequireCountersigning = *rules.RequireCountersigning
+		}
+
+		if rules.RequireTagsToBeOnProtectedBranches != nil {
+			existing.RequireTagsToBeOnProtectedBranches = *rules.RequireTagsToBeOnProtectedBranches
 		}
 
 		if rules.RequireHash != nil {

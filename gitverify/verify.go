@@ -70,12 +70,12 @@ func Verify(repo *git.Repository, state *gitkit.RepoState, repoConfig *RepoConfi
 			}
 		}
 
-		err = validateTags(repo, state, repoConfig, commitMetadata, gitHashSHA1, gitHashSHA512)
+		err = validateBranches(repo, state, commitMetadata, repoConfig, gitHashSHA512)
 		if err != nil {
 			return err
 		}
 
-		err = validateBranches(repo, state, commitMetadata, repoConfig, gitHashSHA512)
+		err = validateTags(repo, state, repoConfig, commitMetadata, gitHashSHA1, gitHashSHA512)
 		if err != nil {
 			return err
 		}
@@ -524,6 +524,7 @@ func validateOpts(opts *ValidateOptions, repo *git.Repository, state *gitkit.Rep
 	headHash := head.Hash()
 
 	var tagHash *plumbing.Hash = nil
+	var tagReference *plumbing.Reference = nil
 	if opts.Tag != "" {
 		tags, err := repo.Tags()
 		if err != nil {
@@ -534,10 +535,11 @@ func validateOpts(opts *ValidateOptions, repo *git.Repository, state *gitkit.Rep
 		err = tags.ForEach(func(tag *plumbing.Reference) error {
 			tagName := strings.TrimPrefix(tag.Name().String(), "refs/tags/")
 			if tagName == opts.Tag {
+				tagReference = tag
 				if opts.Commit == "" {
 					config.requireSignedTags = true
 				}
-				err := validateTag(tag, state, config, commitMetadata, gitHashSHA1, gitHashSHA512, !opts.InsecurePartialVerification)
+				err := validateTag(tag, state, config, commitMetadata, gitHashSHA1, gitHashSHA512, !opts.InsecurePartialVerification, false)
 				if err != nil {
 					return err
 				}
@@ -605,6 +607,7 @@ func validateOpts(opts *ValidateOptions, repo *git.Repository, state *gitkit.Rep
 		}
 	}
 
+	onProtectedBranch := false
 	if opts.Branch != "" {
 		remotes, err := repo.References()
 		if err != nil {
@@ -651,6 +654,10 @@ func validateOpts(opts *ValidateOptions, repo *git.Repository, state *gitkit.Rep
 						return err
 					}
 				}
+
+				if isProtected {
+					onProtectedBranch = true
+				}
 			}
 			return nil
 		})
@@ -660,6 +667,23 @@ func validateOpts(opts *ValidateOptions, repo *git.Repository, state *gitkit.Rep
 
 		if !branchFound {
 			return fmt.Errorf("target branch '%s' not found", opts.Branch)
+		}
+	}
+
+	if opts.Tag != "" {
+		if config.requireTagsToBeOnProtectedBranches {
+			if opts.Branch == "" {
+				return fmt.Errorf("requireTagsBeOnProtectedBranches must be used with --branch")
+			}
+
+			isExempt, err := tagIsExempt(tagReference, state, config, gitHashSHA1, gitHashSHA512)
+			if err != nil {
+				return err
+			}
+
+			if !isExempt && !onProtectedBranch {
+				return fmt.Errorf("requireTagsBeOnProtectedBranches set but tag %s is not on a protected branch", opts.Tag)
+			}
 		}
 	}
 
@@ -841,6 +865,17 @@ func validateProtectedBranch(reference *plumbing.Reference, branchName string, s
 			break
 		}
 
+		metadata, found := commitMetadata[current.Hash]
+		if !found {
+			return fmt.Errorf("commit %s not found in metadata", current.Hash.String())
+		}
+
+		if !metadata.OnProtectedBranch {
+			// optimistically mark as on protected branch
+			metadata.OnProtectedBranch = true
+			commitMetadata[current.Hash] = metadata
+		}
+
 		if config.requireMergeCommits {
 			if len(current.ParentHashes) != 2 {
 				return fmt.Errorf("requireMergeCommits is set, but commit %s on protected branch has %d parents", current.Hash.String(), len(current.ParentHashes))
@@ -848,14 +883,12 @@ func validateProtectedBranch(reference *plumbing.Reference, branchName string, s
 		}
 
 		if config.requireCountersigning {
-			metadata := commitMetadata[current.Hash]
-
 			if metadata.MergeTag == nil {
 				return fmt.Errorf("requireCountersigning is set, but no mergetag in commit %s", current.Hash.String())
 			}
 		}
 
-		_, found := config.maintainerEmails[current.Committer.Email]
+		_, found = config.maintainerEmails[current.Committer.Email]
 		if !found {
 			if config.trustedForge != nil && current.Committer.Email == config.trustedForge.email {
 				_, found = config.maintainerEmails[current.Author.Email]
@@ -869,8 +902,28 @@ func validateProtectedBranch(reference *plumbing.Reference, branchName string, s
 			}
 		}
 
+		current, found = state.CommitMap[current.ParentHashes[0]]
+		if !found {
+			return fmt.Errorf("did not find commit %s", reference.Hash().String())
+		}
+	}
+
+	// mark after and prior commits to be on a protected branch
+	for {
+		metadata, found := commitMetadata[current.Hash]
+		if !found {
+			return fmt.Errorf("commit %s not found in metadata", current.Hash.String())
+		}
+
+		if metadata.OnProtectedBranch {
+			break
+		} else {
+			metadata.OnProtectedBranch = true
+			commitMetadata[current.Hash] = metadata
+		}
+
 		if len(current.ParentHashes) == 0 {
-			return fmt.Errorf("protected branch %s is not a descendant of after", reference.Name().String())
+			break
 		}
 
 		current, found = state.CommitMap[current.ParentHashes[0]]
@@ -916,7 +969,7 @@ func validateTags(repo *git.Repository, state *gitkit.RepoState, repoConfig *Rep
 	}
 
 	err = tags.ForEach(func(tag *plumbing.Reference) error {
-		return validateTag(tag, state, repoConfig, commitMetadata, gitHashSHA1, gitHashSHA512, true)
+		return validateTag(tag, state, repoConfig, commitMetadata, gitHashSHA1, gitHashSHA512, true, true)
 	})
 	if err != nil {
 		return err
@@ -925,9 +978,7 @@ func validateTags(repo *git.Repository, state *gitkit.RepoState, repoConfig *Rep
 	return nil
 }
 
-func validateTag(tag *plumbing.Reference, state *gitkit.RepoState, repoConfig *RepoConfig, commitMetadata map[plumbing.Hash]*CommitData, gitHashSHA1 githash.GitHash, gitHashSHA512 githash.GitHash, fullVerification bool) error {
-	isExempted := false
-
+func validateTag(tag *plumbing.Reference, state *gitkit.RepoState, repoConfig *RepoConfig, commitMetadata map[plumbing.Hash]*CommitData, gitHashSHA1 githash.GitHash, gitHashSHA512 githash.GitHash, fullVerification bool, onProtectedBranchVerification bool) error {
 	tagReference := tag.Name().String()
 	tagPrefix := "refs/tags/"
 	if !strings.HasPrefix(tag.Name().String(), tagPrefix) {
@@ -935,70 +986,18 @@ func validateTag(tag *plumbing.Reference, state *gitkit.RepoState, repoConfig *R
 	}
 	tagName := strings.TrimPrefix(tag.Name().String(), "refs/tags/")
 
+	isExempt, err := tagIsExempt(tag, state, repoConfig, gitHashSHA1, gitHashSHA512)
+	if err != nil {
+		return err
+	}
+
 	t, isAnnotatedTag := state.TagMap[tag.Hash()]
-	if isAnnotatedTag {
-		if t.Hash != tag.Hash() {
-			return fmt.Errorf("inconsistent hash for tag %s", tag.Hash().String())
-		}
-
-		hash := t.Hash
-		verifiedHash, err := gitHashSHA1.TagSum(hash)
-		if err != nil {
-			return err
-		}
-
-		if !bytes.Equal(verifiedHash, hash[:]) {
-			return fmt.Errorf("failed to verify hash for annotated tag %s", tag.Hash().String())
-		}
-	} else {
-		hash := tag.Hash()
-		verifiedHash, err := gitHashSHA1.CommitSum(tag.Hash())
-		if err != nil {
-			return err
-		}
-
-		if !bytes.Equal(verifiedHash, hash[:]) {
-			return fmt.Errorf("failed to verify hash for light weight tag %s", tag.Hash().String())
-		}
-	}
-
-	tagHash, found := repoConfig.exemptedTags[tag.Name().String()]
-	if found {
-		if tagHash != tag.Hash().String() {
-			return fmt.Errorf("wrong hash.sha1 for exempted tag '%s', got %s, expected %s", tag.Name().String(), tag.Hash().String(), tagHash)
-		}
-		isExempted = true
-	}
-
-	tagHashSHA512, found := repoConfig.exemptedTagsSHA512[tag.Name().String()]
-	if found {
-		var sha512Hash []byte
-		var err error
-		if isAnnotatedTag {
-			sha512Hash, err = gitHashSHA512.TagSum(t.Hash)
-			if err != nil {
-				return err
-			}
-		} else {
-			sha512Hash, err = gitHashSHA512.CommitSum(tag.Hash())
-			if err != nil {
-				return err
-			}
-		}
-
-		h := hex.EncodeToString(sha512Hash)
-		if tagHashSHA512 != h {
-			return fmt.Errorf("wrong SHA-512 for exempted tag '%s', got %s, expected %s", tag.Name().String(), h, tagHashSHA512)
-		}
-		isExempted = true
-	}
-
 	if isAnnotatedTag {
 		if tagName != t.Name {
 			return fmt.Errorf("tag ref '%s' does not match name '%s'", tagName, t.Name)
 		}
 
-		if !isExempted {
+		if !isExempt {
 			signatureType, err := inferSignatureType(t.PGPSignature)
 			if err != nil {
 				return err
@@ -1053,6 +1052,18 @@ func validateTag(tag *plumbing.Reference, state *gitkit.RepoState, repoConfig *R
 				return err
 			}
 
+			if onProtectedBranchVerification {
+				metadata, found := commitMetadata[c.Hash]
+				if !found {
+					return fmt.Errorf("commit %s missing in metadata", c.Hash.String())
+				}
+
+				err = verifyOnProtectedBranch(tagName, tagReference, metadata, repoConfig)
+				if err != nil {
+					return err
+				}
+			}
+
 			if fullVerification {
 				err := validateCommit(c, state, commitMetadata, gitHashSHA512, repoConfig)
 				if err != nil {
@@ -1073,7 +1084,7 @@ func validateTag(tag *plumbing.Reference, state *gitkit.RepoState, repoConfig *R
 			}
 		}
 	} else {
-		if !isExempted {
+		if !isExempt {
 			if repoConfig.requireSignedTags {
 				return fmt.Errorf("tag '%s' is lightweight, but signing is required", tagName)
 			}
@@ -1086,6 +1097,18 @@ func validateTag(tag *plumbing.Reference, state *gitkit.RepoState, repoConfig *R
 			err := verifyConnectedToAfter(c, state, commitMetadata)
 			if err != nil {
 				return err
+			}
+
+			if onProtectedBranchVerification {
+				metadata, found := commitMetadata[c.Hash]
+				if !found {
+					return fmt.Errorf("commit %s missing in metadata", c.Hash.String())
+				}
+
+				err = verifyOnProtectedBranch(tagName, tagReference, metadata, repoConfig)
+				if err != nil {
+					return err
+				}
 			}
 
 			if fullVerification {
@@ -1101,6 +1124,80 @@ func validateTag(tag *plumbing.Reference, state *gitkit.RepoState, repoConfig *R
 					}
 				}
 			}
+		}
+	}
+
+	return nil
+}
+
+func tagIsExempt(tag *plumbing.Reference, state *gitkit.RepoState, repoConfig *RepoConfig, gitHashSHA1 githash.GitHash, gitHashSHA512 githash.GitHash) (bool, error) {
+	isExempt := false
+
+	t, isAnnotatedTag := state.TagMap[tag.Hash()]
+	if isAnnotatedTag {
+		if t.Hash != tag.Hash() {
+			return false, fmt.Errorf("inconsistent hash for tag %s", tag.Hash().String())
+		}
+
+		hash := t.Hash
+		verifiedHash, err := gitHashSHA1.TagSum(hash)
+		if err != nil {
+			return false, err
+		}
+
+		if !bytes.Equal(verifiedHash, hash[:]) {
+			return false, fmt.Errorf("failed to verify hash for annotated tag %s", tag.Hash().String())
+		}
+	} else {
+		hash := tag.Hash()
+		verifiedHash, err := gitHashSHA1.CommitSum(tag.Hash())
+		if err != nil {
+			return false, err
+		}
+
+		if !bytes.Equal(verifiedHash, hash[:]) {
+			return false, fmt.Errorf("failed to verify hash for light weight tag %s", tag.Hash().String())
+		}
+	}
+
+	tagHash, found := repoConfig.exemptedTags[tag.Name().String()]
+	if found {
+		if tagHash != tag.Hash().String() {
+			return false, fmt.Errorf("wrong hash.sha1 for exempted tag '%s', got %s, expected %s", tag.Name().String(), tag.Hash().String(), tagHash)
+		}
+		isExempt = true
+	}
+
+	tagHashSHA512, found := repoConfig.exemptedTagsSHA512[tag.Name().String()]
+	if found {
+		var sha512Hash []byte
+		var err error
+		if isAnnotatedTag {
+			sha512Hash, err = gitHashSHA512.TagSum(t.Hash)
+			if err != nil {
+				return false, err
+			}
+		} else {
+			sha512Hash, err = gitHashSHA512.CommitSum(tag.Hash())
+			if err != nil {
+				return false, err
+			}
+		}
+
+		h := hex.EncodeToString(sha512Hash)
+		if tagHashSHA512 != h {
+			return false, fmt.Errorf("wrong SHA-512 for exempted tag '%s', got %s, expected %s", tag.Name().String(), h, tagHashSHA512)
+		}
+		isExempt = true
+	}
+
+	return isExempt, nil
+}
+
+func verifyOnProtectedBranch(tagName string, tagReference string, metadata *CommitData, repoConfig *RepoConfig) error {
+	if repoConfig.requireTagsToBeOnProtectedBranches && !metadata.OnProtectedBranch {
+		if !countersignTagRegex.MatchString(tagReference) {
+			return fmt.Errorf("requireTagsBeOnProtectedBranches set but tag %s is not on a protected branch", tagName)
 		}
 	}
 

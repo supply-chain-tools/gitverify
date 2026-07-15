@@ -565,38 +565,32 @@ func validateOpts(opts *ValidateOptions, repo *git.Repository, state *gitkit.Rep
 		if !tagFound {
 			return fmt.Errorf("target tag '%s' not found", opts.Tag)
 		}
-
-		if opts.InsecurePartialVerification && opts.Commit == "" && opts.Branch == "" {
-			if opts.VerifyAtHEAD {
-				if tagHash.String() != headHash.String() {
-					return fmt.Errorf("HEAD does not point to the target commit %s", opts.Commit)
-				}
-			}
-			return nil
-		}
 	}
 
-	if opts.Commit == "" {
-		opts.Commit = tagHash.String()
+	commit := opts.Commit
+	if commit == "" {
+		commit = tagHash.String()
 	}
 
 	var targetHash = plumbing.ZeroHash
-	if opts.Commit != "" {
-		c, found := state.CommitMap[plumbing.NewHash(opts.Commit)]
+	if commit != "" {
+		c, found := state.CommitMap[plumbing.NewHash(commit)]
 		if !found {
-			return fmt.Errorf("target commit '%s' not found", opts.Commit)
+			return fmt.Errorf("target commit '%s' not found", commit)
 		}
 
-		err = validateCommitsRecursively(c, state, commitMetadata, gitHashSHA512, config, opts)
-		if err != nil {
-			return err
+		if !opts.InsecurePartialVerification || opts.Commit != "" {
+			err = validateCommitsRecursively(c, state, commitMetadata, gitHashSHA512, config, opts)
+			if err != nil {
+				return err
+			}
 		}
 
 		targetHash = c.Hash
 
 		if opts.VerifyAtHEAD {
 			if targetHash != headHash {
-				return fmt.Errorf("HEAD does not point to the target commit %s", opts.Commit)
+				return fmt.Errorf("HEAD does not point to the target commit %s", commit)
 			}
 		}
 
@@ -626,25 +620,21 @@ func validateOpts(opts *ValidateOptions, repo *git.Repository, state *gitkit.Rep
 					return fmt.Errorf("commit '%s' not found", reference.Hash().String())
 				}
 
-				if isProtected && !opts.InsecurePartialVerification {
-					err := validateProtectedBranch(reference, branchName, state, commitMetadata, config, gitHashSHA512)
-					if err != nil {
-						return fmt.Errorf("failed to validate protected branch '%s' rules: %w", reference.Name(), err)
-					}
-				} else {
-					err := validateCommitsRecursively(c, state, commitMetadata, gitHashSHA512, config, opts)
-					if err != nil {
-						return err
-					}
-				}
-
-				if opts.VerifyAtHEAD {
-					if headHash != c.Hash {
-						return fmt.Errorf("HEAD does not point to the target commit %s", opts.Commit)
+				if !opts.InsecurePartialVerification {
+					if isProtected {
+						err := validateProtectedBranch(reference, branchName, state, commitMetadata, config, gitHashSHA512)
+						if err != nil {
+							return fmt.Errorf("failed to validate protected branch '%s' rules: %w", reference.Name(), err)
+						}
+					} else {
+						err := validateCommitsRecursively(c, state, commitMetadata, gitHashSHA512, config, opts)
+						if err != nil {
+							return err
+						}
 					}
 				}
 
-				if opts.Commit != "" && opts.VerifyAtTip {
+				if commit != "" && opts.VerifyAtTip {
 					if targetHash != c.Hash {
 						return fmt.Errorf("target commit %s does not point to the tip of branch '%s'", targetHash.String(), reference.Name())
 					}

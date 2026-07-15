@@ -639,7 +639,7 @@ func validateOpts(opts *ValidateOptions, repo *git.Repository, state *gitkit.Rep
 						return fmt.Errorf("target commit %s does not point to the tip of branch '%s'", targetHash.String(), reference.Name())
 					}
 				} else {
-					err = validateOnBranch(targetHash, branchName, c, state, commitMetadata, gitHashSHA512, config)
+					err = validateOnBranch(targetHash, branchName, c, state)
 					if err != nil {
 						return err
 					}
@@ -680,7 +680,7 @@ func validateOpts(opts *ValidateOptions, repo *git.Repository, state *gitkit.Rep
 	return nil
 }
 
-func validateOnBranch(targetHash plumbing.Hash, branchName string, c *object.Commit, state *gitkit.RepoState, commitMetadata map[plumbing.Hash]*CommitData, gitHashSHA512 githash.GitHash, config *RepoConfig) error {
+func validateOnBranch(targetHash plumbing.Hash, branchName string, c *object.Commit, state *gitkit.RepoState) error {
 	current := c
 
 	for {
@@ -696,11 +696,6 @@ func validateOnBranch(targetHash plumbing.Hash, branchName string, c *object.Com
 		parent, found := state.CommitMap[parentHash]
 		if !found {
 			return fmt.Errorf("target parent hash not found: %s", parentHash)
-		}
-
-		err := validateCommit(parent, state, commitMetadata, gitHashSHA512, config)
-		if err != nil {
-			return err
 		}
 
 		current = parent

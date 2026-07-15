@@ -58,8 +58,8 @@ func TestConfig(t *testing.T) {
   "rules": {
     "allowPGPSignatures": true,
     "allowSSHSignatures": true,
-    "requireSSHUserPresent": true,
-    "requireSSHUserVerified": true,
+    "sshRequireUserPresent": true,
+    "sshRequireUserVerified": true,
 	"trustForge": true
   },
   "trustedForge": "github.com",
@@ -80,8 +80,8 @@ func TestConfig(t *testing.T) {
       "contributors": ["d@example.internal"],
       "rules": {
         "allowSSHSignatures": true,
-        "requireSSHUserPresent": false,
-        "requireSSHUserVerified": false,
+        "sshRequireUserPresent": false,
+        "sshRequireUserVerified": false,
         "trustForge": false
       },
       "protectedBranches": ["release"]

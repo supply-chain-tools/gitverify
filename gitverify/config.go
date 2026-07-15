@@ -105,8 +105,8 @@ type ForgeIdentity struct {
 
 type Rules struct {
 	AllowSSHSignatures     *bool           `json:"allowSshSignatures"`
-	RequireSSHUserPresent  *bool           `json:"requireSshUserPresent"`
-	RequireSSHUserVerified *bool           `json:"requireSshUserVerified"`
+	SSHRequireUserPresent  *bool           `json:"sshRequireUserPresent"`
+	SSHRequireUserVerified *bool           `json:"sshRequireUserVerified"`
 	SSHHashAlgorithms      []hashAlgorithm `json:"sshHashAlgorithms"`
 	SSHKeyFormats          []string        `json:"sshKeyFormats"`
 
@@ -615,7 +615,7 @@ func validateAfter(after []After, requireSHA512 bool) ([]After, error) {
 		}
 
 		if requireSHA512 && a.SHA512 == nil {
-			return nil, fmt.Errorf("after.sha512 is missing, but requireSha512 is set")
+			return nil, fmt.Errorf("after.sha512 is missing, but requireHash is set")
 		}
 
 		if a.SHA512 != nil {
@@ -665,7 +665,7 @@ func validateExemptTags(exemptTags []ExemptTag, requireSHA512 bool) ([]ExemptTag
 		}
 
 		if requireSHA512 && exemptTag.SHA512 == nil {
-			return nil, fmt.Errorf("exemptTag.sha512 is missing, but requireSha512 is set")
+			return nil, fmt.Errorf("exemptTag.sha512 is missing, but requireHash is set")
 		}
 
 		if exemptTag.SHA512 != nil {
@@ -730,12 +730,12 @@ func overwriteExisting(existing ParsedRules, rules *Rules, allowedSSHKeyFormats 
 			existing.AllowSSHSignatures = *rules.AllowSSHSignatures
 		}
 
-		if rules.RequireSSHUserPresent != nil {
-			existing.RequireSSHUserPresent = *rules.RequireSSHUserPresent
+		if rules.SSHRequireUserPresent != nil {
+			existing.RequireSSHUserPresent = *rules.SSHRequireUserPresent
 		}
 
-		if rules.RequireSSHUserVerified != nil {
-			existing.RequireSSHUserVerified = *rules.RequireSSHUserVerified
+		if rules.SSHRequireUserVerified != nil {
+			existing.RequireSSHUserVerified = *rules.SSHRequireUserVerified
 		}
 
 		if rules.SSHKeyFormats != nil {

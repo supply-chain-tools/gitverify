@@ -36,7 +36,7 @@ func Verify(repo *git.Repository, state *gitkit.RepoState, repoConfig *RepoConfi
 		return err
 	}
 
-	remoteSet, err := getRemoteSet(repo)
+	remoteSet, err := GetRemoteSet(repo)
 	if err != nil {
 		return err
 	}
@@ -189,24 +189,6 @@ func validateRefs(repo *git.Repository, state *gitkit.RepoState, repoConfig *Rep
 	}
 
 	return nil
-}
-
-func getRemoteSet(repo *git.Repository) (hashset.Set[string], error) {
-	remoteSet := hashset.New[string]()
-	r, err := repo.Remotes()
-	if err != nil {
-		return nil, err
-	}
-
-	for _, remote := range r {
-		candidate := remote.Config().Name
-		if strings.Contains(candidate, "/") {
-			return nil, fmt.Errorf("remote '%s' contains '/'", candidate)
-		}
-		remoteSet.Add(candidate)
-	}
-
-	return remoteSet, nil
 }
 
 func validateCommit(commit *object.Commit, state *gitkit.RepoState, commitMetadata map[plumbing.Hash]*CommitData, gitHashSHA512 githash.GitHash, repoConfig *RepoConfig) error {

@@ -2,8 +2,11 @@ package main
 
 import (
 	"fmt"
+	"io/fs"
+	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -41,6 +44,7 @@ const (
 )
 
 var plainNameRegex = regexp.MustCompile("^[a-z]+$")
+var repoNameRegex = regexp.MustCompile("^[a-zA-Z]+\\.git$")
 
 func main() {
 	optionsAndArgs, err := parse()
@@ -53,6 +57,28 @@ func main() {
 	if err != nil {
 		print(err.Error(), "\n")
 		os.Exit(1)
+	}
+
+	if optionsAndArgs.command == commandClone {
+		err = runClone(optionsAndArgs)
+		if err != nil {
+			print(err.Error(), "\n")
+			os.Exit(1)
+		}
+
+		err := os.Chdir(*optionsAndArgs.repoDir)
+		if err != nil {
+			print(err.Error(), "\n")
+			os.Exit(1)
+		}
+
+		err = runGitverify()
+		if err != nil {
+			print(err.Error(), "\n")
+			os.Exit(1)
+		}
+
+		os.Exit(0)
 	}
 
 	repo, err := openRepo()
@@ -122,8 +148,6 @@ func main() {
 			print(err.Error(), "\n")
 			os.Exit(1)
 		}
-	case commandClone:
-		// TODO
 	case commandInit:
 		fallthrough
 	case commandCheckout:
@@ -308,6 +332,22 @@ func runLocalMerge(optionsAndArgs *OptionsAndArgs, branch string) error {
 	return nil
 }
 
+func runClone(optionsAndArgs *OptionsAndArgs) error {
+	command := []string{"git", "clone", *optionsAndArgs.url}
+	fmt.Printf("command: %s\n", command)
+
+	cmd := exec.Command(command[0], command[1:]...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	err := cmd.Run()
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func runGitverify() error {
 	command := []string{"gitverify"}
 
@@ -328,6 +368,8 @@ type OptionsAndArgs struct {
 	args    []string
 	remote  *string
 	ref     *string
+	url     *string
+	repoDir *string
 }
 
 func parse() (*OptionsAndArgs, error) {
@@ -348,6 +390,8 @@ func parse() (*OptionsAndArgs, error) {
 	var remote *string = nil
 	var ref *string = nil
 	var err error
+	var cloneUrl *string = nil
+	var repoDir *string = nil
 
 	var command commandType
 	switch args[0] {
@@ -371,6 +415,10 @@ func parse() (*OptionsAndArgs, error) {
 		}
 	case string(commandClone):
 		command = commandClone
+		cloneUrl, repoDir, err = getCloneUrlAndRepoDir(args)
+		if err != nil {
+			return nil, err
+		}
 	case string(commandInit):
 		command = commandInit
 	case string(commandCheckout):
@@ -412,6 +460,8 @@ func parse() (*OptionsAndArgs, error) {
 		args:    args[1:],
 		remote:  remote,
 		ref:     ref,
+		url:     cloneUrl,
+		repoDir: repoDir,
 	}, nil
 }
 
@@ -459,4 +509,64 @@ func getRemoteAndRef(args []string) (*string, *string, error) {
 	}
 
 	return remote, ref, nil
+}
+
+func getCloneUrlAndRepoDir(args []string) (*string, *string, error) {
+	if len(args) < 2 {
+		return nil, nil, fmt.Errorf("repository URL must be specified")
+	}
+
+	if len(args) > 2 {
+		return nil, nil, fmt.Errorf("too many arguments")
+	}
+
+	cloneUr := args[1]
+	repoDir := ""
+	if strings.HasPrefix(cloneUr, "https://") {
+		u, err := url.Parse(cloneUr)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		c := filepath.Base(u.Path)
+		if !repoNameRegex.MatchString(c) {
+			return nil, nil, fmt.Errorf("invalid repository URL")
+		}
+		repoDir = strings.TrimSuffix(c, ".git")
+	} else if strings.HasPrefix(cloneUr, "git@") {
+		rest := strings.TrimPrefix(cloneUr, "git@")
+		parts := strings.Split(rest, ":")
+		if len(parts) != 2 {
+			fmt.Printf("here 1\n")
+			return nil, nil, fmt.Errorf("invalid repository URL")
+		}
+
+		host := parts[0]
+		// FIXME
+		u, err := url.Parse("https://" + host)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		if u.Host != host {
+			return nil, nil, fmt.Errorf("invalid repository URL")
+		}
+
+		path := parts[1]
+		if !fs.ValidPath(path) {
+			return nil, nil, fmt.Errorf("invalid repository URL")
+		}
+
+		c := filepath.Base(path)
+		if !repoNameRegex.MatchString(c) {
+			fmt.Printf("here 4\n")
+			return nil, nil, fmt.Errorf("invalid repository URL")
+		}
+		repoDir = strings.TrimSuffix(c, ".git")
+	} else {
+		fmt.Printf("here 6\n")
+		return nil, nil, fmt.Errorf("invalid repository URL prefix")
+	}
+
+	return &cloneUr, &repoDir, nil
 }

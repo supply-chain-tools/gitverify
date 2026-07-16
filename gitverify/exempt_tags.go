@@ -2,16 +2,18 @@ package gitverify
 
 import (
 	"encoding/hex"
+	"sort"
+
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/supply-chain-tools/go-sandbox/githash"
 	"github.com/supply-chain-tools/go-sandbox/gitkit"
-	"sort"
 )
 
 type ExemptTag struct {
-	Ref  string  `json:"ref"`
-	Hash Digests `json:"hash"`
+	Ref    string  `json:"ref"`
+	SHA1   *string `json:"sha1,omitempty"`
+	SHA512 *string `json:"sha512,omitempty"`
 }
 
 func ComputeExemptTags(repo *git.Repository, state *gitkit.RepoState, gitHashSHA1 githash.GitHash, gitHashSHA512 githash.GitHash, useSHA512 bool) ([]ExemptTag, error) {
@@ -48,11 +50,9 @@ func ComputeExemptTags(repo *git.Repository, state *gitkit.RepoState, gitHashSHA
 		}
 
 		result = append(result, ExemptTag{
-			Ref: tag.Name().String(),
-			Hash: Digests{
-				SHA1:   &hashSHA1,
-				SHA512: hexSHA512,
-			},
+			Ref:    tag.Name().String(),
+			SHA1:   &hashSHA1,
+			SHA512: hexSHA512,
 		})
 		return nil
 	})

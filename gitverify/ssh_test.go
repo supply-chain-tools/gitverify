@@ -47,15 +47,17 @@ func TestSSSH(t *testing.T) {
 		},
 	}
 
+	allowedSSHKeyFormats := defaultSSHKeyFormats()
+
 	for _, testCase := range testCases {
-		err := verifySSHSignature(testCase.Key, testCase.Signature, data, namespace, true, false)
+		err := verifySSHSignature(testCase.Key, testCase.Signature, data, namespace, true, false, allowedSSHKeyFormats)
 		if err != nil {
 			t.Errorf("Verification failed for %s: %v", testCase.Name, err)
 		}
 	}
 
 	sha256TestCase := testCases[5]
-	err := verifySSHSignature(sha256TestCase.Key, sha256TestCase.Signature, data, namespace, false, true)
+	err := verifySSHSignature(sha256TestCase.Key, sha256TestCase.Signature, data, namespace, false, true, allowedSSHKeyFormats)
 	if err == nil {
 		t.Errorf("Verification succeeded for %s: expected failure", sha256TestCase.Name)
 	}
@@ -79,8 +81,10 @@ func TestTooShort(t *testing.T) {
 		},
 	}
 
+	allowedSSHKeyFormats := defaultSSHKeyFormats()
+
 	for _, testCase := range testCases {
-		err := verifySSHSignature(testCase.Key, testCase.Signature, data, namespace, true, false)
+		err := verifySSHSignature(testCase.Key, testCase.Signature, data, namespace, true, false, allowedSSHKeyFormats)
 		if err == nil {
 			t.Errorf("Verification should have failed %s:", testCase.Name)
 		} else {

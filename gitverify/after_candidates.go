@@ -3,12 +3,13 @@ package gitverify
 import (
 	"crypto/sha512"
 	"encoding/hex"
+	"strings"
+
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/supply-chain-tools/go-sandbox/githash"
 	"github.com/supply-chain-tools/go-sandbox/gitkit"
 	"github.com/supply-chain-tools/go-sandbox/hashset"
-	"strings"
 )
 
 func AfterCandidates(repo *git.Repository, repoConfig *RepoConfig, useSHA512 bool) ([]After, error) {
@@ -37,7 +38,7 @@ func AfterCandidates(repo *git.Repository, repoConfig *RepoConfig, useSHA512 boo
 			return nil
 		}
 
-		isProtected, branchName := isProtected(reference, repoConfig)
+		isProtected, branchName := IsProtected(reference, repoConfig)
 
 		if isProtected {
 			sha1 := reference.Hash().String()

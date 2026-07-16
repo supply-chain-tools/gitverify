@@ -17,16 +17,18 @@ import (
 )
 
 type ValidateOptions struct {
-	Commit       string
-	Tag          string
-	Branch       string
-	VerifyOnHEAD bool
-	VerifyOnTip  bool
+	Commit                      string
+	Tag                         string
+	Branch                      string
+	VerifyAtHEAD                bool
+	VerifyAtTip                 bool
+	InsecurePartialVerification bool
 }
 
 var Hex2Regex = regexp.MustCompile("^[a-f0-9]{2}$")
 var HexSHA1Regex = regexp.MustCompile("^[a-f0-9]{40}$")
 var HexSHA512Regex = regexp.MustCompile("^[a-f0-9]{128}$")
+var countersignTagRegex = regexp.MustCompile("^refs/tags/pr/[0-9]+$")
 
 func Verify(repo *git.Repository, state *gitkit.RepoState, repoConfig *RepoConfig, gitHashSHA1 githash.GitHash, gitHashSHA512 githash.GitHash, opts *ValidateOptions) error {
 	commitMetadata, err := computeCommitMetadata(state, repoConfig, gitHashSHA1, gitHashSHA512)
@@ -34,7 +36,7 @@ func Verify(repo *git.Repository, state *gitkit.RepoState, repoConfig *RepoConfi
 		return err
 	}
 
-	remoteSet, err := getRemoteSet(repo)
+	remoteSet, err := GetRemoteSet(repo)
 	if err != nil {
 		return err
 	}
@@ -44,8 +46,8 @@ func Verify(repo *git.Repository, state *gitkit.RepoState, repoConfig *RepoConfi
 		return err
 	}
 
-	if opts != nil && opts.Commit != "" {
-		if !HexSHA1Regex.MatchString(opts.Commit) {
+	if opts != nil && (opts.Commit != "" || opts.Tag != "" || opts.Branch != "") {
+		if opts.Commit != "" && !HexSHA1Regex.MatchString(opts.Commit) {
 			return fmt.Errorf("target commit must be a 40 character hex, not '%s'", opts.Commit)
 		}
 
@@ -54,19 +56,26 @@ func Verify(repo *git.Repository, state *gitkit.RepoState, repoConfig *RepoConfi
 			return err
 		}
 	} else {
-		for _, commit := range state.CommitMap {
-			err := validateCommit(commit, commitMetadata, repoConfig)
-			if err != nil {
-				return err
+		if repoConfig.verifyAllCommits {
+			for _, commit := range state.CommitMap {
+				err := validateCommit(commit, state, commitMetadata, gitHashSHA512, repoConfig)
+				if err != nil {
+					return err
+				}
+
+				err = verifyConnectedToAfter(commit, state, commitMetadata)
+				if err != nil {
+					return err
+				}
 			}
 		}
 
-		err = validateTags(repo, state, repoConfig, gitHashSHA1, gitHashSHA512)
+		err = validateBranches(repo, state, commitMetadata, repoConfig, gitHashSHA512)
 		if err != nil {
 			return err
 		}
 
-		err = validateProtectedBranches(repo, state, commitMetadata, repoConfig, gitHashSHA512)
+		err = validateTags(repo, state, repoConfig, commitMetadata, gitHashSHA1, gitHashSHA512)
 		if err != nil {
 			return err
 		}
@@ -182,46 +191,64 @@ func validateRefs(repo *git.Repository, state *gitkit.RepoState, repoConfig *Rep
 	return nil
 }
 
-func getRemoteSet(repo *git.Repository) (hashset.Set[string], error) {
-	remoteSet := hashset.New[string]()
-	r, err := repo.Remotes()
-	if err != nil {
-		return nil, err
-	}
-
-	for _, remote := range r {
-		candidate := remote.Config().Name
-		if strings.Contains(candidate, "/") {
-			return nil, fmt.Errorf("remote '%s' contains '/'", candidate)
-		}
-		remoteSet.Add(candidate)
-	}
-
-	return remoteSet, nil
-}
-
-func validateCommit(commit *object.Commit, commitMetadata map[plumbing.Hash]*CommitData, repoConfig *RepoConfig) error {
+func validateCommit(commit *object.Commit, state *gitkit.RepoState, commitMetadata map[plumbing.Hash]*CommitData, gitHashSHA512 githash.GitHash, repoConfig *RepoConfig) error {
 	metadata, found := commitMetadata[commit.Hash]
 	if !found {
 		return fmt.Errorf("commit not processed: %s", commit.Hash)
 	}
 
-	if metadata.Ignore || metadata.SignatureVerified {
+	if metadata.AfterOrAncestorOfAfter || metadata.SignatureVerified {
 		return nil
+	}
+
+	signatureType, err := inferSignatureType(commit.PGPSignature)
+	if err != nil {
+		return err
 	}
 
 	email := commit.Committer.Email
 
 	if repoConfig.trustedForge != nil {
 		if repoConfig.trustedForge.email == email {
-			err := validateGPGCommit(commit, repoConfig.trustedForge.gpgPublicKey)
-			if err != nil {
-				return err
+			if commit.MergeTag != "" {
+				return fmt.Errorf("forge cannot sign countersign commits")
+			}
+
+			switch signatureType {
+			case SignatureTypePGP:
+				key := repoConfig.trustedForge.commitPGPPublicKey
+				if key == nil {
+					return fmt.Errorf("wrong signature type PGP for forge commit %s", commit.Hash.String())
+				}
+
+				err := validatePGPCommit(commit, *key)
+				if err != nil {
+					return err
+				}
+			case SignatureTypeSSH:
+				id := repoConfig.trustedForge.identity
+				if id == nil {
+					return fmt.Errorf("wrong signature type SSH for forge commit %s", commit.Hash.String())
+				}
+
+				content, err := buildContent(commit)
+				if err != nil {
+					return err
+				}
+
+				err = validateSSH(content, commit.PGPSignature, id.commitSSHPublicKeys, repoConfig)
+				if err != nil {
+					return fmt.Errorf("failed to validate commit %s: %w", commit.Hash.String(), err)
+				}
+			case SignatureTypeNone:
+				return fmt.Errorf("unsigned forge commit: %s", commit.Hash.String())
+			default:
+				return fmt.Errorf("unknown signature type for forge commit: %s", commit.Hash.String())
 			}
 
 			_, found := repoConfig.maintainerOrContributorEmails[commit.Author.Email]
 			if !found {
-				_, found := repoConfig.maintainerOrContributorForgeEmails[commit.Author.Email]
+				_, found = repoConfig.maintainerOrContributorForgeEmails[commit.Author.Email]
 				if !found {
 					return fmt.Errorf("author email '%s' not found for forge commit: %s", commit.Author.Email, commit.Hash.String())
 				}
@@ -236,18 +263,29 @@ func validateCommit(commit *object.Commit, commitMetadata map[plumbing.Hash]*Com
 		return fmt.Errorf("no maintainer with email '%s' for commit %s", email, commit.Hash)
 	}
 
-	switch metadata.SignatureType {
+	switch signatureType {
 	case SignatureTypeSSH:
 		content, err := buildContent(commit)
 		if err != nil {
 			return err
 		}
-		err = validateSSH(content, commit.PGPSignature, id, repoConfig)
+
+		sshPublicKeys := id.commitSSHPublicKeys
+		if commit.MergeTag != "" {
+			sshPublicKeys = id.countersignCommitSSHPublicKeys
+		}
+
+		err = validateSSH(content, commit.PGPSignature, sshPublicKeys, repoConfig)
 		if err != nil {
 			return fmt.Errorf("failed to validate commit %s: %w", commit.Hash.String(), err)
 		}
-	case SignatureTypeGPG:
-		err := validateIdentityGPGCommit(commit, id, repoConfig)
+	case SignatureTypePGP:
+		pgpPublicKeys := id.commitPGPPublicKeys
+		if commit.MergeTag != "" {
+			pgpPublicKeys = id.countersignCommitPGPPublicKeys
+		}
+
+		err := validateIdentityPGPCommit(commit, pgpPublicKeys, repoConfig)
 		if err != nil {
 			return err
 		}
@@ -258,6 +296,10 @@ func validateCommit(commit *object.Commit, commitMetadata map[plumbing.Hash]*Com
 	}
 
 	if commit.MergeTag != "" {
+		if len(commit.ParentHashes) != 2 {
+			return fmt.Errorf("expected exactly 2 parent commits for countersigned commit %s", commit.Hash.String())
+		}
+
 		mergeTag, err := extractMergeTag(commit)
 		if err != nil {
 			return err
@@ -279,12 +321,12 @@ func validateCommit(commit *object.Commit, commitMetadata map[plumbing.Hash]*Com
 			if err != nil {
 				return err
 			}
-			err = validateSSH(content, mergeTag.PGPSignature, id, repoConfig)
+			err = validateSSH(content, mergeTag.PGPSignature, id.countersignTagSSHPublicKeys, repoConfig)
 			if err != nil {
 				return fmt.Errorf("failed to validate mergetag in commit %s: %w", commit.Hash.String(), err)
 			}
-		case SignatureTypeGPG:
-			err := validateIdentityGPGTag(mergeTag, id, repoConfig)
+		case SignatureTypePGP:
+			err := validateIdentityPGPTag(mergeTag, id.countersignTagPGPPublicKeys, repoConfig)
 			if err != nil {
 				return err
 			}
@@ -300,12 +342,138 @@ func validateCommit(commit *object.Commit, commitMetadata map[plumbing.Hash]*Com
 			return fmt.Errorf("commit parent does not match mergetag in commit %s", commit.Hash.String())
 		}
 
+		if repoConfig.requireDistinctCountersignTagIdentities {
+			if mergeTag.Tagger.Email == email {
+				return fmt.Errorf("requireDistinctCountersignTagIdentities is set but identity %s is reused in commit %s", email, commit.Hash.String())
+			}
+		}
+
+		if repoConfig.requireDistinctCountersignCommitIdentities {
+			if mergeTag.Tagger.Email == email {
+				return fmt.Errorf("requireDistinctCountersignCommitIdentities is set but identity %s is reused in commit %s", email, commit.Hash.String())
+			}
+		}
+
+		targetCommit, found := state.CommitMap[mergeTag.Target]
+		if !found {
+			return fmt.Errorf("mergetag target commit %s not found", metadata.MergeTag.Target.String())
+		}
+
+		if commit.TreeHash != targetCommit.TreeHash {
+			return fmt.Errorf("countersigned trees do not match for countersigned commit %s", commit.Hash.String())
+		}
+
+		if repoConfig.requireSHA512 {
+			messageLines := strings.Split(mergeTag.Message, "\n")
+
+			err = verifySha512(commit.Hash, targetCommit.Hash, messageLines, gitHashSHA512)
+			if err != nil {
+				return err
+			}
+		}
+
+		err = verifyConnected(commit.ParentHashes[1], commit.ParentHashes[0], state)
+		if err != nil {
+			return err
+		}
+
 		metadata.MergeTag = mergeTag
 	}
 
 	metadata.SignatureVerified = true
 
 	return nil
+}
+
+func verifySha512(commitHash plumbing.Hash, targetCommitHash plumbing.Hash, messageLines []string, gitHashSHA512 githash.GitHash) error {
+	prefix := "Gitverify-object-sha512: "
+
+	verified := false
+	for i := len(messageLines) - 1; i >= 0; i-- {
+		if strings.HasPrefix(messageLines[i], prefix) {
+			if verified {
+				return fmt.Errorf("duplicate '%s' in commit %s", prefix, commitHash.String())
+			}
+
+			hash := strings.TrimPrefix(messageLines[i], prefix)
+
+			if !HexSHA512Regex.MatchString(hash) {
+				return fmt.Errorf("malformed Gitverify-object-sha512 in merge commit: %s", commitHash.String())
+			}
+
+			objectSHA512, err := gitHashSHA512.CommitSum(targetCommitHash)
+			if err != nil {
+				return err
+			}
+
+			if hex.EncodeToString(objectSHA512) != hash {
+				return fmt.Errorf("wrong Gitverify-object-sha512 in merge commit %s", commitHash.String())
+			}
+
+			verified = true
+		}
+	}
+
+	if !verified {
+		return fmt.Errorf("missing Gitverify-object-sha512 in merge commit %s", commitHash.String())
+	}
+
+	return nil
+}
+
+func verifyVersionForTag(tagReference string, tagName string, commit *object.Commit, commitMetadata map[plumbing.Hash]*CommitData) error {
+	if countersignTagRegex.MatchString(tagReference) {
+		return nil
+	}
+
+	metadata, found := commitMetadata[commit.Hash]
+	if !found {
+		return fmt.Errorf("commit metadata for commit %s not found", commit.Hash.String())
+	}
+
+	commitLines := strings.Split(commit.Message, "\n")
+	commitVersions := extractVersions(commitLines)
+
+	if metadata.MergeTag != nil {
+		tagLines := strings.Split(metadata.MergeTag.Message, "\n")
+		tagVersions := extractVersions(tagLines)
+
+		if len(tagVersions) != 1 {
+			return fmt.Errorf("expected exactly one version for countersigned commit %s", commit.Hash.String())
+		}
+
+		if tagVersions[0] != tagName {
+			return fmt.Errorf("countersigned commit version does not match tag name %s", tagName)
+		}
+
+		if len(commitVersions) != 0 {
+			return fmt.Errorf("expected the version to be in the mergetag not the commit %s", commit.Hash.String())
+		}
+	} else {
+		if len(commitVersions) != 1 {
+			return fmt.Errorf("expected exactly one version in the commit %s", commit.Hash.String())
+		}
+
+		if commitVersions[0] != tagName {
+			return fmt.Errorf("commit version does not match tag name %s", tagName)
+		}
+	}
+
+	return nil
+}
+
+func extractVersions(messageLines []string) []string {
+	prefix := "Gitverify-version: "
+
+	versions := make([]string, 0)
+	for i := len(messageLines) - 1; i >= 0; i-- {
+		if strings.HasPrefix(messageLines[i], prefix) {
+			version := strings.TrimPrefix(messageLines[i], prefix)
+			versions = append(versions, version)
+		}
+	}
+
+	return versions
 }
 
 func extractMergeTag(commit *object.Commit) (*object.Tag, error) {
@@ -337,25 +505,8 @@ func validateOpts(opts *ValidateOptions, repo *git.Repository, state *gitkit.Rep
 
 	headHash := head.Hash()
 
-	c, found := state.CommitMap[plumbing.NewHash(opts.Commit)]
-	if !found {
-		return fmt.Errorf("target commit '%s' not found", opts.Commit)
-	}
-
-	err = validateCommitsRecursively(c, state, commitMetadata, config)
-	if err != nil {
-		return err
-	}
-
-	targetHash := c.Hash
-
-	if opts.VerifyOnHEAD {
-		if targetHash != headHash {
-			return fmt.Errorf("HEAD does not point to the target commit %s", opts.Commit)
-		}
-	}
-
 	var tagHash *plumbing.Hash = nil
+	var tagReference *plumbing.Reference = nil
 	if opts.Tag != "" {
 		tags, err := repo.Tags()
 		if err != nil {
@@ -365,9 +516,12 @@ func validateOpts(opts *ValidateOptions, repo *git.Repository, state *gitkit.Rep
 		tagFound := false
 		err = tags.ForEach(func(tag *plumbing.Reference) error {
 			tagName := strings.TrimPrefix(tag.Name().String(), "refs/tags/")
-
 			if tagName == opts.Tag {
-				err := validateTag(tag, state, config, gitHashSHA1, gitHashSHA512)
+				tagReference = tag
+				if opts.Commit == "" {
+					config.requireSignedTags = true
+				}
+				err := validateTag(tag, state, config, commitMetadata, gitHashSHA1, gitHashSHA512, !opts.InsecurePartialVerification, false)
 				if err != nil {
 					return err
 				}
@@ -395,12 +549,41 @@ func validateOpts(opts *ValidateOptions, repo *git.Repository, state *gitkit.Rep
 		}
 	}
 
-	if tagHash != nil {
-		if targetHash != *tagHash {
-			return fmt.Errorf("target tag '%s' does not point to target commit %s ", opts.Tag, targetHash)
+	commit := opts.Commit
+	if commit == "" {
+		commit = tagHash.String()
+	}
+
+	var targetHash = plumbing.ZeroHash
+	if commit != "" {
+		c, found := state.CommitMap[plumbing.NewHash(commit)]
+		if !found {
+			return fmt.Errorf("target commit '%s' not found", commit)
+		}
+
+		if !opts.InsecurePartialVerification || opts.Commit != "" {
+			err = validateCommitsRecursively(c, state, commitMetadata, gitHashSHA512, config, opts)
+			if err != nil {
+				return err
+			}
+		}
+
+		targetHash = c.Hash
+
+		if opts.VerifyAtHEAD {
+			if targetHash != headHash {
+				return fmt.Errorf("HEAD does not point to the target commit %s", commit)
+			}
+		}
+
+		if tagHash != nil {
+			if targetHash != *tagHash {
+				return fmt.Errorf("target tag '%s' does not point to target commit %s ", opts.Tag, targetHash)
+			}
 		}
 	}
 
+	onProtectedBranch := false
 	if opts.Branch != "" {
 		remotes, err := repo.References()
 		if err != nil {
@@ -409,7 +592,7 @@ func validateOpts(opts *ValidateOptions, repo *git.Repository, state *gitkit.Rep
 
 		branchFound := false
 		err = remotes.ForEach(func(reference *plumbing.Reference) error {
-			isProtected, branchName := isProtected(reference, config)
+			isProtected, branchName := IsProtected(reference, config)
 
 			if branchName == opts.Branch {
 				branchFound = true
@@ -419,27 +602,33 @@ func validateOpts(opts *ValidateOptions, repo *git.Repository, state *gitkit.Rep
 					return fmt.Errorf("commit '%s' not found", reference.Hash().String())
 				}
 
-				err := validateCommitsRecursively(c, state, commitMetadata, config)
-				if err != nil {
-					return err
-				}
-
-				if isProtected {
-					err := validateProtectedBranch(reference, branchName, state, commitMetadata, config, gitHashSHA512)
-					if err != nil {
-						return fmt.Errorf("failed to validate protected branch '%s' rules: %w", reference.Name(), err)
+				if !opts.InsecurePartialVerification {
+					if isProtected {
+						err := validateProtectedBranch(reference, branchName, state, commitMetadata, config, gitHashSHA512)
+						if err != nil {
+							return fmt.Errorf("failed to validate protected branch '%s' rules: %w", reference.Name(), err)
+						}
+					} else {
+						err := validateCommitsRecursively(c, state, commitMetadata, gitHashSHA512, config, opts)
+						if err != nil {
+							return err
+						}
 					}
 				}
 
-				if opts.VerifyOnTip {
+				if commit != "" && opts.VerifyAtTip {
 					if targetHash != c.Hash {
 						return fmt.Errorf("target commit %s does not point to the tip of branch '%s'", targetHash.String(), reference.Name())
 					}
 				} else {
-					err = validateOnBranch(targetHash, branchName, c, state, commitMetadata, config)
+					err = validateOnBranch(targetHash, branchName, c, state)
 					if err != nil {
 						return err
 					}
+				}
+
+				if isProtected {
+					onProtectedBranch = true
 				}
 			}
 			return nil
@@ -453,10 +642,27 @@ func validateOpts(opts *ValidateOptions, repo *git.Repository, state *gitkit.Rep
 		}
 	}
 
+	if opts.Tag != "" {
+		if config.requireTagsToBeOnProtectedBranches {
+			if opts.Branch == "" {
+				return fmt.Errorf("requireTagsBeOnProtectedBranches must be used with --branch")
+			}
+
+			isExempt, err := tagIsExempt(tagReference, state, config, gitHashSHA1, gitHashSHA512)
+			if err != nil {
+				return err
+			}
+
+			if !isExempt && !onProtectedBranch {
+				return fmt.Errorf("requireTagsBeOnProtectedBranches set but tag %s is not on a protected branch", opts.Tag)
+			}
+		}
+	}
+
 	return nil
 }
 
-func validateOnBranch(targetHash plumbing.Hash, branchName string, c *object.Commit, state *gitkit.RepoState, commitMetadata map[plumbing.Hash]*CommitData, config *RepoConfig) error {
+func validateOnBranch(targetHash plumbing.Hash, branchName string, c *object.Commit, state *gitkit.RepoState) error {
 	current := c
 
 	for {
@@ -474,21 +680,25 @@ func validateOnBranch(targetHash plumbing.Hash, branchName string, c *object.Com
 			return fmt.Errorf("target parent hash not found: %s", parentHash)
 		}
 
-		err := validateCommit(parent, commitMetadata, config)
-		if err != nil {
-			return err
-		}
-
 		current = parent
 	}
 
 	return nil
 }
 
-func validateCommitsRecursively(c *object.Commit, state *gitkit.RepoState, commitMetadata map[plumbing.Hash]*CommitData, config *RepoConfig) error {
-	err := validateCommit(c, commitMetadata, config)
+func validateCommitsRecursively(c *object.Commit, state *gitkit.RepoState, commitMetadata map[plumbing.Hash]*CommitData, gitHashSHA512 githash.GitHash, config *RepoConfig, opts *ValidateOptions) error {
+	err := validateCommit(c, state, commitMetadata, gitHashSHA512, config)
 	if err != nil {
 		return err
+	}
+
+	if opts.InsecurePartialVerification {
+		err = verifyConnectedToAfter(c, state, commitMetadata)
+		if err != nil {
+			return err
+		}
+
+		return nil
 	}
 
 	visited := hashset.New[plumbing.Hash]()
@@ -510,8 +720,8 @@ func validateCommitsRecursively(c *object.Commit, state *gitkit.RepoState, commi
 					return fmt.Errorf("target parent hash not found: %s", parentHash)
 				}
 
-				if !commitMetadata[parent.Hash].Ignore {
-					err := validateCommit(parent, commitMetadata, config)
+				if !commitMetadata[parent.Hash].AfterOrAncestorOfAfter {
+					err := validateCommit(parent, state, commitMetadata, gitHashSHA512, config)
 					if err != nil {
 						return err
 					}
@@ -520,85 +730,76 @@ func validateCommitsRecursively(c *object.Commit, state *gitkit.RepoState, commi
 					visited.Add(parentHash)
 				}
 			}
+
+			if !config.verifyAllCommits {
+				// Only check first parent
+				break
+			}
 		}
 	}
 
 	return nil
 }
 
-func verifyConnectedToSpecificAfter(commit *object.Commit, after plumbing.Hash, state *gitkit.RepoState, allowCommitsBeforeAfter bool) error {
-	if commit.Hash == after {
-		return nil
-	}
-
-	afterCommit, found := state.CommitMap[after]
-	if !found {
-		return fmt.Errorf("target after hash not found: %s", after.String())
-	}
-
-	// see if commit is a descendant of after
-	connected, err := isLeftDescendant(commit, afterCommit, state)
-	if err != nil {
-		return err
-	}
-
-	if connected {
-		return nil
-	}
-
-	if !allowCommitsBeforeAfter {
-		return fmt.Errorf("commit %s is not a descendant of after %s", commit.Hash.String(), after.String())
-	}
-
-	// see if after is a descendant of commit
-	connected, err = isLeftDescendant(afterCommit, commit, state)
-	if err != nil {
-		return err
-	}
-
-	if !connected {
-		return fmt.Errorf("commit %s is not connected to after %s", commit.Hash.String(), after.String())
-	}
-
-	return nil
-}
-
-func isLeftDescendant(a *object.Commit, b *object.Commit, state *gitkit.RepoState) (bool, error) {
-	current := a
-
+func verifyConnectedToAfter(commit *object.Commit, state *gitkit.RepoState, commitMetadata map[plumbing.Hash]*CommitData) error {
+	current := commit
 	for {
-		if current.Hash == b.Hash {
-			return true, nil
+		metadata, found := commitMetadata[current.Hash]
+		if !found {
+			return fmt.Errorf("commit %s not found in commit metadata", commit.Hash.String())
 		}
+
+		if metadata.AfterOrAncestorOfAfter || metadata.ConnectedToAfter {
+			return nil
+		}
+
+		// optimistically assume that the chain will be verified
+		metadata.ConnectedToAfter = true
+		commitMetadata[current.Hash] = metadata
 
 		if len(current.ParentHashes) == 0 {
-			return false, nil
+			return fmt.Errorf("commit %s is not connected to any after", commit.Hash.String())
 		}
 
-		parentHash := current.ParentHashes[0]
-
-		parent, found := state.CommitMap[parentHash]
+		current, found = state.CommitMap[current.ParentHashes[0]]
 		if !found {
-			return false, fmt.Errorf("target parent hash not found: %s", parentHash)
+			return fmt.Errorf("commit %s not found in commit metadata", commit.Hash.String())
 		}
-
-		current = parent
 	}
 }
 
-func validateProtectedBranches(repo *git.Repository, state *gitkit.RepoState, commitMetadata map[plumbing.Hash]*CommitData, config *RepoConfig, gitHashSHA512 githash.GitHash) error {
+func validateBranches(repo *git.Repository, state *gitkit.RepoState, commitMetadata map[plumbing.Hash]*CommitData, config *RepoConfig, gitHashSHA512 githash.GitHash) error {
 	remotes, err := repo.References()
 	if err != nil {
 		return err
 	}
 
 	err = remotes.ForEach(func(reference *plumbing.Reference) error {
-		isProtected, branchName := isProtected(reference, config)
+		isProtected, branchName := IsProtected(reference, config)
 
 		if isProtected {
 			err := validateProtectedBranch(reference, branchName, state, commitMetadata, config, gitHashSHA512)
 			if err != nil {
 				return err
+			}
+		} else {
+			if config.verifyAllCommits {
+				referenceName := reference.Name().String()
+				if strings.HasPrefix(referenceName, "refs/tags/") {
+					return nil
+				}
+
+				if reference.Type() == plumbing.HashReference {
+					c, found := state.CommitMap[reference.Hash()]
+					if !found {
+						return fmt.Errorf("did not find commit %s for reference %s", reference.Hash().String(), referenceName)
+					}
+
+					err := verifyConnectedToAfter(c, state, commitMetadata)
+					if err != nil {
+						return err
+					}
+				}
 			}
 		}
 		return nil
@@ -622,13 +823,24 @@ func validateProtectedBranch(reference *plumbing.Reference, branchName string, s
 	}
 
 	for {
-		err := validateCommit(current, commitMetadata, config)
+		err := validateCommit(current, state, commitMetadata, gitHashSHA512, config)
 		if err != nil {
 			return err
 		}
 
 		if current.Hash == targetAfter {
 			break
+		}
+
+		metadata, found := commitMetadata[current.Hash]
+		if !found {
+			return fmt.Errorf("commit %s not found in metadata", current.Hash.String())
+		}
+
+		if !metadata.OnProtectedBranch {
+			// optimistically mark as on protected branch
+			metadata.OnProtectedBranch = true
+			commitMetadata[current.Hash] = metadata
 		}
 
 		if config.requireMergeCommits {
@@ -638,83 +850,47 @@ func validateProtectedBranch(reference *plumbing.Reference, branchName string, s
 		}
 
 		if config.requireCountersigning {
-			metadata := commitMetadata[current.Hash]
-
 			if metadata.MergeTag == nil {
 				return fmt.Errorf("requireCountersigning is set, but no mergetag in commit %s", current.Hash.String())
 			}
+		}
 
-			targetCommit, found := state.CommitMap[metadata.MergeTag.Target]
+		_, found = config.maintainerEmails[current.Committer.Email]
+		if !found {
+			if config.trustedForge != nil && current.Committer.Email == config.trustedForge.email {
+				_, found = config.maintainerEmails[current.Author.Email]
+				if !found {
+					_, found = config.maintainerForgeEmails[current.Author.Email]
+				}
+			}
+
 			if !found {
-				return fmt.Errorf("mergetag target commit %s not found", metadata.MergeTag.Target.String())
-			}
-
-			if current.TreeHash != targetCommit.TreeHash {
-				return fmt.Errorf("requireCountersigning is set, but commit tree and mergetag tree does not match for commit %s", current.Hash.String())
-			}
-
-			if metadata.MergeTag.Tagger.Email == current.Committer.Email {
-				return fmt.Errorf("committer and tagger cannot be the same when requireCountersigning is set for commit %s", current.Hash.String())
-			}
-
-			err = verifyConnected(current.ParentHashes[1], current.ParentHashes[0], state)
-			if err != nil {
-				return err
-			}
-
-			if config.requireSHA512 {
-				messageLines := strings.Split(metadata.MergeTag.Message, "\n")
-				prefix := "Gitverify-object-sha512: "
-
-				verified := false
-				for i := len(messageLines) - 1; i >= 0; i-- {
-					if strings.HasPrefix(messageLines[i], prefix) {
-						hash := strings.TrimPrefix(messageLines[i], prefix)
-
-						if !HexSHA512Regex.MatchString(hash) {
-							return fmt.Errorf("malformed Gitverify-object-sha512 in merge commit: %s", current.Hash.String())
-						}
-
-						objectSHA512, err := gitHashSHA512.CommitSum(targetCommit.Hash)
-						if err != nil {
-							return err
-						}
-
-						if hex.EncodeToString(objectSHA512) == hash {
-							// Note that this verifies the commit the mergetag points to, including its tree, which by the
-							// check above has to point to the same tree that is in the merge commit.
-							verified = true
-							break
-						}
-
-						return fmt.Errorf("wrong Gitverify-object-sha512 in merge commit %s", current.Hash.String())
-					}
-				}
-
-				if !verified {
-					return fmt.Errorf("missing Gitverify-object-sha512 in merge commit %s", current.Hash.String())
-				}
+				return fmt.Errorf("merge commit %s made by %s which is not a maintainer", current.Hash.String(), current.Committer.Email)
 			}
 		}
 
-		if len(current.ParentHashes) == 2 {
-			_, found := config.maintainerEmails[current.Committer.Email]
-			if !found {
-				if config.trustedForge != nil && current.Committer.Email == config.trustedForge.email {
-					_, found = config.maintainerEmails[current.Author.Email]
-					if !found {
-						_, found = config.maintainerForgeEmails[current.Author.Email]
-					}
-				}
+		current, found = state.CommitMap[current.ParentHashes[0]]
+		if !found {
+			return fmt.Errorf("did not find commit %s", reference.Hash().String())
+		}
+	}
 
-				if !found {
-					return fmt.Errorf("merge commit %s made by %s which is not a maintainer", current.Hash.String(), current.Committer.Email)
-				}
-			}
+	// mark after and prior commits to be on a protected branch
+	for {
+		metadata, found := commitMetadata[current.Hash]
+		if !found {
+			return fmt.Errorf("commit %s not found in metadata", current.Hash.String())
+		}
+
+		if metadata.OnProtectedBranch {
+			break
+		} else {
+			metadata.OnProtectedBranch = true
+			commitMetadata[current.Hash] = metadata
 		}
 
 		if len(current.ParentHashes) == 0 {
-			return fmt.Errorf("protected branch %s is not a descendant of after", reference.Name().String())
+			break
 		}
 
 		current, found = state.CommitMap[current.ParentHashes[0]]
@@ -753,14 +929,14 @@ func verifyConnected(start plumbing.Hash, target plumbing.Hash, state *gitkit.Re
 	return fmt.Errorf("no path from %s to %s", start.String(), target.String())
 }
 
-func validateTags(repo *git.Repository, state *gitkit.RepoState, repoConfig *RepoConfig, gitHashSHA1 githash.GitHash, gitHashSHA512 githash.GitHash) error {
+func validateTags(repo *git.Repository, state *gitkit.RepoState, repoConfig *RepoConfig, commitMetadata map[plumbing.Hash]*CommitData, gitHashSHA1 githash.GitHash, gitHashSHA512 githash.GitHash) error {
 	tags, err := repo.Tags()
 	if err != nil {
 		return err
 	}
 
 	err = tags.ForEach(func(tag *plumbing.Reference) error {
-		return validateTag(tag, state, repoConfig, gitHashSHA1, gitHashSHA512)
+		return validateTag(tag, state, repoConfig, commitMetadata, gitHashSHA1, gitHashSHA512, true, true)
 	})
 	if err != nil {
 		return err
@@ -769,42 +945,194 @@ func validateTags(repo *git.Repository, state *gitkit.RepoState, repoConfig *Rep
 	return nil
 }
 
-func validateTag(tag *plumbing.Reference, state *gitkit.RepoState, repoConfig *RepoConfig, gitHashSHA1 githash.GitHash, gitHashSHA512 githash.GitHash) error {
-	isExempted := false
+func validateTag(tag *plumbing.Reference, state *gitkit.RepoState, repoConfig *RepoConfig, commitMetadata map[plumbing.Hash]*CommitData, gitHashSHA1 githash.GitHash, gitHashSHA512 githash.GitHash, fullVerification bool, onProtectedBranchVerification bool) error {
+	tagReference := tag.Name().String()
+	tagPrefix := "refs/tags/"
+	if !strings.HasPrefix(tag.Name().String(), tagPrefix) {
+		return fmt.Errorf("tag name %s does not start with %s", tag.Name().String(), tagPrefix)
+	}
+	tagName := strings.TrimPrefix(tag.Name().String(), "refs/tags/")
+
+	isExempt, err := tagIsExempt(tag, state, repoConfig, gitHashSHA1, gitHashSHA512)
+	if err != nil {
+		return err
+	}
+
+	t, isAnnotatedTag := state.TagMap[tag.Hash()]
+	if isAnnotatedTag {
+		if tagName != t.Name {
+			return fmt.Errorf("tag ref '%s' does not match name '%s'", tagName, t.Name)
+		}
+
+		if !isExempt {
+			signatureType, err := inferSignatureType(t.PGPSignature)
+			if err != nil {
+				return err
+			}
+
+			id, found := repoConfig.maintainerEmails[t.Tagger.Email]
+			if !found {
+				return fmt.Errorf("no maintainer with email '%s' for tag %s", t.Tagger.Email, tagName)
+			}
+
+			switch signatureType {
+			case SignatureTypeSSH:
+				content, err := tagContent(t)
+				if err != nil {
+					return err
+				}
+
+				sshKeys := id.tagSSHPublicKeys
+				if countersignTagRegex.MatchString(tagReference) {
+					sshKeys = id.countersignTagSSHPublicKeys
+				}
+
+				err = validateSSH(content, t.PGPSignature, sshKeys, repoConfig)
+				if err != nil {
+					return fmt.Errorf("failed to validate tag %s: %w", tagName, err)
+				}
+			case SignatureTypePGP:
+				pgpKeys := id.tagPGPPublicKeys
+				if countersignTagRegex.MatchString(tagReference) {
+					pgpKeys = id.countersignTagPGPPublicKeys
+				}
+
+				err := validateIdentityPGPTag(t, pgpKeys, repoConfig)
+				if err != nil {
+					return err
+				}
+			case SignatureTypeNone:
+				if repoConfig.requireSignedTags {
+					return fmt.Errorf("unsigned annotated tag: %s", tagName)
+				}
+			default:
+				return fmt.Errorf("unknown signature type for tag: %s", tagName)
+			}
+
+			c, found := state.CommitMap[t.Target]
+			if !found {
+				return fmt.Errorf("commit %s missing for tag %s", t.Target.String(), tag.Hash().String())
+			}
+
+			err = verifyConnectedToAfter(c, state, commitMetadata)
+			if err != nil {
+				return err
+			}
+
+			if onProtectedBranchVerification {
+				metadata, found := commitMetadata[c.Hash]
+				if !found {
+					return fmt.Errorf("commit %s missing in metadata", c.Hash.String())
+				}
+
+				err = verifyOnProtectedBranch(tagName, tagReference, metadata, repoConfig)
+				if err != nil {
+					return err
+				}
+			}
+
+			if fullVerification {
+				err := validateCommit(c, state, commitMetadata, gitHashSHA512, repoConfig)
+				if err != nil {
+					return err
+				}
+
+				err = verifyDistinctIdentities(t, c, commitMetadata, repoConfig)
+				if err != nil {
+					return err
+				}
+
+				if repoConfig.requireMatchedVersions {
+					err = verifyVersionForTag(tagReference, tagName, c, commitMetadata)
+					if err != nil {
+						return err
+					}
+				}
+			}
+		}
+	} else {
+		if !isExempt {
+			if repoConfig.requireSignedTags {
+				return fmt.Errorf("tag '%s' is lightweight, but signing is required", tagName)
+			}
+
+			c, found := state.CommitMap[tag.Hash()]
+			if !found {
+				return fmt.Errorf("commit %s missing for tag %s", tag.Hash(), tagName)
+			}
+
+			err := verifyConnectedToAfter(c, state, commitMetadata)
+			if err != nil {
+				return err
+			}
+
+			if onProtectedBranchVerification {
+				metadata, found := commitMetadata[c.Hash]
+				if !found {
+					return fmt.Errorf("commit %s missing in metadata", c.Hash.String())
+				}
+
+				err = verifyOnProtectedBranch(tagName, tagReference, metadata, repoConfig)
+				if err != nil {
+					return err
+				}
+			}
+
+			if fullVerification {
+				err := validateCommit(c, state, commitMetadata, gitHashSHA512, repoConfig)
+				if err != nil {
+					return err
+				}
+
+				if repoConfig.requireMatchedVersions {
+					err = verifyVersionForTag(tagReference, tagName, c, commitMetadata)
+					if err != nil {
+						return err
+					}
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+func tagIsExempt(tag *plumbing.Reference, state *gitkit.RepoState, repoConfig *RepoConfig, gitHashSHA1 githash.GitHash, gitHashSHA512 githash.GitHash) (bool, error) {
+	isExempt := false
 
 	t, isAnnotatedTag := state.TagMap[tag.Hash()]
 	if isAnnotatedTag {
 		if t.Hash != tag.Hash() {
-			return fmt.Errorf("inconsistent hash for tag %s", tag.Hash().String())
+			return false, fmt.Errorf("inconsistent hash for tag %s", tag.Hash().String())
 		}
 
 		hash := t.Hash
 		verifiedHash, err := gitHashSHA1.TagSum(hash)
 		if err != nil {
-			return err
+			return false, err
 		}
 
 		if !bytes.Equal(verifiedHash, hash[:]) {
-			return fmt.Errorf("failed to verify hash for annotated tag %s", tag.Hash().String())
+			return false, fmt.Errorf("failed to verify hash for annotated tag %s", tag.Hash().String())
 		}
 	} else {
 		hash := tag.Hash()
 		verifiedHash, err := gitHashSHA1.CommitSum(tag.Hash())
 		if err != nil {
-			return err
+			return false, err
 		}
 
 		if !bytes.Equal(verifiedHash, hash[:]) {
-			return fmt.Errorf("failed to verify hash for light weight tag %s", tag.Hash().String())
+			return false, fmt.Errorf("failed to verify hash for light weight tag %s", tag.Hash().String())
 		}
 	}
 
 	tagHash, found := repoConfig.exemptedTags[tag.Name().String()]
 	if found {
 		if tagHash != tag.Hash().String() {
-			return fmt.Errorf("wrong hash.sha1 for exempted tag '%s', got %s, expected %s", tag.Name().String(), tag.Hash().String(), tagHash)
+			return false, fmt.Errorf("wrong hash.sha1 for exempted tag '%s', got %s, expected %s", tag.Name().String(), tag.Hash().String(), tagHash)
 		}
-		isExempted = true
+		isExempt = true
 	}
 
 	tagHashSHA512, found := repoConfig.exemptedTagsSHA512[tag.Name().String()]
@@ -814,66 +1142,80 @@ func validateTag(tag *plumbing.Reference, state *gitkit.RepoState, repoConfig *R
 		if isAnnotatedTag {
 			sha512Hash, err = gitHashSHA512.TagSum(t.Hash)
 			if err != nil {
-				return err
+				return false, err
 			}
 		} else {
 			sha512Hash, err = gitHashSHA512.CommitSum(tag.Hash())
 			if err != nil {
-				return err
+				return false, err
 			}
 		}
 
 		h := hex.EncodeToString(sha512Hash)
 		if tagHashSHA512 != h {
-			return fmt.Errorf("wrong SHA-512 for exempted tag '%s', got %s, expected %s", tag.Name().String(), h, tagHashSHA512)
+			return false, fmt.Errorf("wrong SHA-512 for exempted tag '%s', got %s, expected %s", tag.Name().String(), h, tagHashSHA512)
 		}
-		isExempted = true
+		isExempt = true
 	}
 
-	entry := strings.TrimPrefix(tag.Name().String(), "refs/tags/")
-	if isAnnotatedTag {
-		if entry != t.Name {
-			return fmt.Errorf("tag ref '%s' does not match name '%s'", entry, t.Name)
+	return isExempt, nil
+}
+
+func verifyOnProtectedBranch(tagName string, tagReference string, metadata *CommitData, repoConfig *RepoConfig) error {
+	if repoConfig.requireTagsToBeOnProtectedBranches && !metadata.OnProtectedBranch {
+		if !countersignTagRegex.MatchString(tagReference) {
+			return fmt.Errorf("requireTagsBeOnProtectedBranches set but tag %s is not on a protected branch", tagName)
+		}
+	}
+
+	return nil
+}
+
+func verifyDistinctIdentities(tag *object.Tag, commit *object.Commit, commitMetadata map[plumbing.Hash]*CommitData, repoConfig *RepoConfig) error {
+	metadata, found := commitMetadata[commit.Hash]
+	if !found {
+		return fmt.Errorf("commit %s not found in commit metadata", commit.Hash.String())
+	}
+
+	mergeTag := metadata.MergeTag
+	if metadata.AfterOrAncestorOfAfter && commit.MergeTag != "" {
+		var err error
+		mergeTag, err = extractMergeTag(commit)
+		if err != nil {
+			return err
+		}
+	}
+
+	taggerEmail := tag.Tagger.Email
+	if mergeTag != nil {
+		countersignCommitEmail := commit.Committer.Email
+		countersignTagEmail := mergeTag.Tagger.Email
+		if repoConfig.requireDistinctTagIdentities {
+			if taggerEmail == countersignCommitEmail {
+				return fmt.Errorf("requireDistinctTagIdentities is set but identity %s is reused for countersigned commit and tag %s", taggerEmail, tag.Name)
+			}
+
+			if taggerEmail == countersignTagEmail {
+				return fmt.Errorf("requireDistinctTagIdentities is set but identity %s is reused for countersigned tag and tag %s", taggerEmail, tag.Name)
+			}
 		}
 
-		if !isExempted {
-			signatureType, err := inferSignatureType(t.PGPSignature)
-			if err != nil {
-				return err
+		if repoConfig.requireDistinctCountersignTagIdentities {
+			if taggerEmail == countersignTagEmail {
+				return fmt.Errorf("requireDistinctCountersignTagIdentities is set but identity %s is reused for countersigned commit and tag %s", taggerEmail, tag.Name)
 			}
+		}
 
-			id, found := repoConfig.maintainerEmails[t.Tagger.Email]
-			if !found {
-				return fmt.Errorf("no maintainer with email '%s' for tag %s", t.Tagger.Email, t.Name)
-			}
-
-			switch signatureType {
-			case SignatureTypeSSH:
-				content, err := tagContent(t)
-				if err != nil {
-					return err
-				}
-				err = validateSSH(content, t.PGPSignature, id, repoConfig)
-				if err != nil {
-					return fmt.Errorf("failed to validate tag %s: %w", t.Name, err)
-				}
-			case SignatureTypeGPG:
-				err := validateIdentityGPGTag(t, id, repoConfig)
-				if err != nil {
-					return err
-				}
-			case SignatureTypeNone:
-				if repoConfig.requireSignedTags {
-					return fmt.Errorf("unsigned annotated tag: %s", t.Name)
-				}
-			default:
-				return fmt.Errorf("unknown signature type for tag: %s", t.Name)
+		if repoConfig.requireDistinctCountersignCommitIdentities {
+			if taggerEmail == countersignCommitEmail {
+				return fmt.Errorf("requireDistinctCountersignCommitIdentities is set but identity %s is reused for countersigned commit and tag %s", taggerEmail, tag.Name)
 			}
 		}
 	} else {
-		if !isExempted {
-			if repoConfig.requireSignedTags {
-				return fmt.Errorf("tag '%s' is lightweight, but signing is required", tag.Name())
+		commitEmail := commit.Committer.Email
+		if repoConfig.requireDistinctTagIdentities {
+			if taggerEmail == commitEmail {
+				return fmt.Errorf("requireDistinctTagIdentities is set but identity %s is reused for tag %s", taggerEmail, tag.Name)
 			}
 		}
 	}
@@ -995,14 +1337,7 @@ func computeCommitMetadata(state *gitkit.RepoState, repoConfig *RepoConfig, gitH
 				return nil, err
 			}
 		} else {
-			signatureType, err := inferSignatureType(commit.PGPSignature)
-			if err != nil {
-				return nil, err
-			}
-
-			commitMap[hash] = &CommitData{
-				SignatureType: signatureType,
-			}
+			commitMap[hash] = &CommitData{}
 		}
 	}
 
@@ -1047,7 +1382,7 @@ func buildContent(commit *object.Commit) (string, error) {
 	return string(data), nil
 }
 
-func isProtected(reference *plumbing.Reference, config *RepoConfig) (bool, string) {
+func IsProtected(reference *plumbing.Reference, config *RepoConfig) (bool, string) {
 	isProtected := false
 	var branchName string
 	referenceName := reference.Name().String()

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/supply-chain-tools/go-sandbox/hashset"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -21,7 +22,7 @@ type SSHSig struct {
 	Signature     string
 }
 
-func validateSSH(content string, signature string, identity identity, config *RepoConfig) error {
+func validateSSH(content string, signature string, sshPublicKeys map[string]*ssh.PublicKey, config *RepoConfig) error {
 	if !config.allowSSHSignatures {
 		return fmt.Errorf("SSH signatures not allowed")
 	}
@@ -31,7 +32,7 @@ func validateSSH(content string, signature string, identity identity, config *Re
 		return err
 	}
 
-	trustedKey, found := identity.sshPublicKeys[sshSig.PublicKey]
+	trustedKey, found := sshPublicKeys[sshSig.PublicKey]
 	if found {
 		err = verifySignature(*trustedKey, content, sshSig, sshExpectedNamespace, config.allowSSHSHA256, config.requireSHA512)
 		if err != nil {
@@ -39,37 +40,52 @@ func validateSSH(content string, signature string, identity identity, config *Re
 		}
 
 		if config.requireSSHUserPresent || config.requireSSHUserVerified {
-			publicKey, err := parsePublicKey(sshSig)
+			u2fSignature, err := parseU2FSignature(sshSig)
 			if err != nil {
+				format, formatErr := getSignatureFormat(sshSig)
+				if formatErr != nil {
+					return formatErr
+				}
+
+				if !(*format == ssh.KeyAlgoSKED25519 || *format == ssh.KeyAlgoECDSA256) {
+					return fmt.Errorf("unsupported public key type %s for user present/verified", *format)
+				}
+
 				return err
 			}
 
-			if !(publicKey.KeyType == "sk-ssh-ed25519@openssh.com" || publicKey.KeyType == "sk-ecdsa-sha2-nistp256@openssh.com") {
-				return fmt.Errorf("unsupported public key type %s for user present/verified", publicKey.KeyType)
-			}
-
-			signature, err := parseU2FSignature(sshSig)
-			if err != nil {
-				return err
-			}
-
-			if config.requireSSHUserPresent && !signature.userPresent() {
+			if config.requireSSHUserPresent && !u2fSignature.userPresent() {
 				return fmt.Errorf("user present missing")
 			}
 
-			if config.requireSSHUserVerified && !signature.userVerified() {
+			if config.requireSSHUserVerified && !u2fSignature.userVerified() {
 				return fmt.Errorf("user verified missing")
 			}
 		}
 	} else {
-		return fmt.Errorf("matching SSH key not found for '%s'", identity.email)
+		return fmt.Errorf("matching SSH key not found")
 	}
 
 	return nil
 }
 
-func verifySSHSignature(key string, signature string, data string, expectedNamespace string, allowSHA256 bool, requireSHA512 bool) error {
-	publicKey, _, err := decodeAndParseSSHPublicKey(key)
+func getSignatureFormat(sshSig *SSHSig) (*string, error) {
+	sig := &ssh.Signature{}
+	err := ssh.Unmarshal([]byte(sshSig.Signature), sig)
+	if err != nil {
+		return nil, err
+	}
+
+	keyType, err := keyTypeFromSignatureFormat(sig.Format)
+	if err != nil {
+		return nil, err
+	}
+
+	return &keyType, err
+}
+
+func verifySSHSignature(key string, signature string, data string, expectedNamespace string, allowSHA256 bool, requireSHA512 bool, allowedSSHKeyFormats hashset.Set[string]) error {
+	publicKey, _, err := decodeAndParseSSHPublicKey(key, allowedSSHKeyFormats)
 	if err != nil {
 		return err
 	}
@@ -87,7 +103,7 @@ func verifySSHSignature(key string, signature string, data string, expectedNames
 	return nil
 }
 
-func decodeAndParseSSHPublicKey(key string) (ssh.PublicKey, []byte, error) {
+func decodeAndParseSSHPublicKey(key string, allowedSSHKeyFormats hashset.Set[string]) (ssh.PublicKey, []byte, error) {
 	parts := strings.Split(key, " ")
 	if len(parts) < 2 {
 		return nil, nil, fmt.Errorf("invalid SSH public key")
@@ -107,7 +123,7 @@ func decodeAndParseSSHPublicKey(key string) (ssh.PublicKey, []byte, error) {
 		return nil, nil, fmt.Errorf("inconsistent format for SSH public key '%s'", key)
 	}
 
-	if !isSupportedKeyFormat(publicKey.Type()) {
+	if !isSupportedKeyFormat(publicKey.Type(), allowedSSHKeyFormats) {
 		return nil, nil, fmt.Errorf("unsupported key format '%s'", publicKey.Type())
 	}
 
@@ -244,25 +260,19 @@ func keyTypeFromSignatureFormat(format string) (string, error) {
 	}
 }
 
-func isSupportedKeyFormat(format string) bool {
-	switch format {
-	case ssh.KeyAlgoSKED25519:
-		return true
-	case ssh.KeyAlgoSKECDSA256:
-		return true
-	case ssh.KeyAlgoED25519:
-		return true
-	case ssh.KeyAlgoECDSA256:
-		return true
-	case ssh.KeyAlgoECDSA384:
-		return true
-	case ssh.KeyAlgoECDSA521:
-		return true
-	case "ssh-rsa":
-		return true
-	default:
-		return false
-	}
+func isSupportedKeyFormat(format string, allowedSSHKeyFormats hashset.Set[string]) bool {
+	return allowedSSHKeyFormats.Contains(format)
+}
+
+func defaultSSHKeyFormats() hashset.Set[string] {
+	return hashset.New[string](
+		ssh.KeyAlgoSKED25519,
+		ssh.KeyAlgoSKECDSA256,
+		ssh.KeyAlgoED25519,
+		ssh.KeyAlgoECDSA256,
+		ssh.KeyAlgoECDSA384,
+		ssh.KeyAlgoECDSA521,
+		ssh.KeyAlgoRSA)
 }
 
 func shouldHaveEmptyRest(format string) bool {
@@ -299,23 +309,6 @@ func unwrapSshSignature(signature string) (string, error) {
 	subset := signature[subsetStart:subsetEnd]
 	result := strings.ReplaceAll(subset, "\n", "")
 	return result, nil
-}
-
-type SSHPublicKey struct {
-	KeyType string
-	Key     string
-	Scope   string
-}
-
-func parsePublicKey(sshSig *SSHSig) (*SSHPublicKey, error) {
-	publicKey := &SSHPublicKey{}
-
-	err := ssh.Unmarshal([]byte(sshSig.PublicKey), publicKey)
-	if err != nil {
-		return nil, err
-	}
-
-	return publicKey, nil
 }
 
 type U2FSignature struct {

@@ -29,7 +29,7 @@ This is the recommended way to start using `gitverify` with an existing reposito
     "allowSshSignatures": true,
     "requireSshUserPresent": false,
     "requireSshUserVerified": false,
-    "allowGpgSignatures": true,
+    "allowPgpSignatures": true,
     "requireSignedTags": false,
     "requireMergeCommits": false
   },

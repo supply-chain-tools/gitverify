@@ -10,42 +10,55 @@ import (
 )
 
 type RepoConfig struct {
-	afterSHA1                          hashset.Set[plumbing.Hash]
-	afterSHA512                        hashset.Set[[64]byte]
-	sha1ToBranch                       map[plumbing.Hash]string
-	branchToSHA1                       map[string]plumbing.Hash
-	sha512ToBranch                     map[[64]byte]string
-	afterSHA1ToSHA512                  map[plumbing.Hash][64]byte
-	maintainerEmails                   map[string]identity
-	maintainerOrContributorEmails      map[string]identity
-	maintainerForgeEmails              map[string]identity
-	maintainerOrContributorForgeEmails map[string]identity
-	trustedForge                       *forge
-	allowSSHSignatures                 bool
-	requireSSHUserPresent              bool
-	requireSSHUserVerified             bool
-	allowSSHSHA256                     bool
-	allowGPGSignatures                 bool
-	requireSignedTags                  bool
-	requireMergeCommits                bool
-	requireCountersigning              bool
-	requireSHA512                      bool
-	protectedBranches                  hashset.Set[string]
-	exemptedTags                       map[string]string
-	exemptedTagsSHA512                 map[string]string
+	afterSHA1                                  hashset.Set[plumbing.Hash]
+	afterSHA512                                hashset.Set[[64]byte]
+	sha1ToBranch                               map[plumbing.Hash]string
+	branchToSHA1                               map[string]plumbing.Hash
+	sha512ToBranch                             map[[64]byte]string
+	afterSHA1ToSHA512                          map[plumbing.Hash][64]byte
+	maintainerEmails                           map[string]identity
+	maintainerOrContributorEmails              map[string]identity
+	maintainerForgeEmails                      map[string]identity
+	maintainerOrContributorForgeEmails         map[string]identity
+	trustedForge                               *forge
+	allowSSHSignatures                         bool
+	requireSSHUserPresent                      bool
+	requireSSHUserVerified                     bool
+	allowSSHSHA256                             bool
+	allowPGPSignatures                         bool
+	requireSignedTags                          bool
+	requireMergeCommits                        bool
+	requireCountersigning                      bool
+	requireTagsToBeOnProtectedBranches         bool
+	requireSHA512                              bool
+	requireMatchedVersions                     bool
+	protectedBranches                          hashset.Set[string]
+	exemptedTags                               map[string]string
+	exemptedTagsSHA512                         map[string]string
+	verifyAllCommits                           bool
+	requireDistinctTagIdentities               bool
+	requireDistinctCountersignCommitIdentities bool
+	requireDistinctCountersignTagIdentities    bool
 }
 
 type identity struct {
-	email         string
-	forgeUsername *string
-	forgeUserId   *string
-	sshPublicKeys map[string]*ssh.PublicKey
-	gpgPublicKeys []string
+	email                          string
+	forgeUsername                  *string
+	forgeUserId                    *string
+	commitSSHPublicKeys            map[string]*ssh.PublicKey
+	tagSSHPublicKeys               map[string]*ssh.PublicKey
+	countersignTagSSHPublicKeys    map[string]*ssh.PublicKey
+	countersignCommitSSHPublicKeys map[string]*ssh.PublicKey
+	commitPGPPublicKeys            []string
+	tagPGPPublicKeys               []string
+	countersignTagPGPPublicKeys    []string
+	countersignCommitPGPPublicKeys []string
 }
 
 type forge struct {
-	email        string
-	gpgPublicKey string
+	email              string
+	commitPGPPublicKey *string
+	identity           *identity
 }
 
 func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
@@ -60,14 +73,12 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 		return nil, fmt.Errorf("repository %s not found in config", repoUri)
 	}
 
-	if len(repo.Maintainers) == 0 {
+	if repo.Maintainers.Size() == 0 {
 		return nil, fmt.Errorf("no maintainers specified: %s", repoUri)
 	}
-	maintainerSet := hashset.New[string](repo.Maintainers...)
-	contributorSet := hashset.New[string](repo.Contributors...)
 
-	for _, m := range repo.Maintainers {
-		if contributorSet.Contains(m) {
+	for _, m := range repo.Maintainers.Values() {
+		if repo.Contributors.Contains(m) {
 			return nil, fmt.Errorf("'%s' must be maintainer or contributor not both", m)
 		}
 	}
@@ -83,27 +94,142 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 	maintainerOrContributorForgeEmails := make(map[string]identity)
 
 	for _, i := range repo.Identities {
-		sshPublicKeys := make(map[string]*ssh.PublicKey)
-		for _, sshPublicKey := range i.SSHPublicKeys {
-			publicKey, rawKey, err := decodeAndParseSSHPublicKey(sshPublicKey)
-			if err != nil {
-				return nil, err
+		sshCommitList := make([]string, 0)
+		sshTagList := make([]string, 0)
+		sshCountersignTagList := make([]string, 0)
+		sshCountersignCommitList := make([]string, 0)
+
+		// TODO use one map for all keys, check type before use and improve erro message
+		for _, sshKey := range i.SSHPublicKeys {
+			if sshKey.SignCommits {
+				sshCommitList = append(sshCommitList, sshKey.Key)
 			}
 
-			// TODO check for duplicates
-			sshPublicKeys[string(rawKey)] = &publicKey
+			if sshKey.SignTags {
+				if repo.Rules.RequireDedicatedTagKeys {
+					if sshKey.SignCommits || sshKey.SignCountersignTags || sshKey.SignCountersignCommits {
+						return nil, fmt.Errorf("requireDedicatedTagKeys set, but key has other purposes")
+					}
+				}
+
+				sshTagList = append(sshTagList, sshKey.Key)
+			}
+
+			if sshKey.SignCountersignTags {
+				if repo.Rules.RequireDedicatedCountersignTagKeys {
+					if sshKey.SignCommits || sshKey.SignTags || sshKey.SignCountersignCommits {
+						return nil, fmt.Errorf("requireDedicatedCountersignTagKeys set, but key has other purposes")
+					}
+				}
+
+				sshCountersignTagList = append(sshCountersignTagList, sshKey.Key)
+			}
+
+			if sshKey.SignCountersignCommits {
+				if repo.Rules.RequireDedicatedCountersignCommitKeys {
+					if sshKey.SignCommits || sshKey.SignTags || sshKey.SignCountersignTags {
+						return nil, fmt.Errorf("requireDedicatedCountersignCommitKeys set, but key has other purposes")
+					}
+				}
+
+				sshCountersignCommitList = append(sshCountersignCommitList, sshKey.Key)
+			}
+		}
+
+		sshCommitMap, err := createSSSHPublicKeyMap(sshCommitList, repo.Rules.SSHKeyFormats)
+		if err != nil {
+			return nil, err
+		}
+
+		sshTagMap, err := createSSSHPublicKeyMap(sshTagList, repo.Rules.SSHKeyFormats)
+		if err != nil {
+			return nil, err
+		}
+
+		sshCountersignTagMap, err := createSSSHPublicKeyMap(sshCountersignTagList, repo.Rules.SSHKeyFormats)
+		if err != nil {
+			return nil, err
+		}
+
+		sshCountersignCommitMap, err := createSSSHPublicKeyMap(sshCountersignCommitList, repo.Rules.SSHKeyFormats)
+		if err != nil {
+			return nil, err
+		}
+
+		pgpCommitList := make([]string, 0)
+		pgpTagList := make([]string, 0)
+		pgpCountersignCommitList := make([]string, 0)
+		pgpCountersignTagList := make([]string, 0)
+
+		// TODO add check of PGP keys
+		for _, pgpKey := range i.PGPPublicKeys {
+			if pgpKey.SignCommits {
+				pgpCommitList = append(pgpCommitList, pgpKey.Key)
+			}
+
+			if pgpKey.SignTags {
+				if repo.Rules.RequireDedicatedTagKeys {
+					if pgpKey.SignCommits || pgpKey.SignCountersignTags || pgpKey.SignCountersignCommits {
+						return nil, fmt.Errorf("requireDedicatedTagKeys set, but key has other purposes")
+					}
+				}
+
+				pgpTagList = append(pgpTagList, pgpKey.Key)
+			}
+
+			if pgpKey.SignCountersignTags {
+				if repo.Rules.RequireDedicatedCountersignTagKeys {
+					if pgpKey.SignCommits || pgpKey.SignTags || pgpKey.SignCountersignCommits {
+						return nil, fmt.Errorf("requireDedicatedCountersignTagKeys set, but key has other purposes")
+					}
+				}
+
+				pgpCountersignTagList = append(pgpCountersignTagList, pgpKey.Key)
+			}
+
+			if pgpKey.SignCountersignCommits {
+				if repo.Rules.RequireDedicatedCountersignCommitKeys {
+					if pgpKey.SignCommits || pgpKey.SignTags || pgpKey.SignCountersignTags {
+						return nil, fmt.Errorf("requireDedicatedCountersignCommitKeys set, but key has other purposes")
+					}
+				}
+
+				pgpCountersignCommitList = append(pgpCountersignCommitList, pgpKey.Key)
+			}
+		}
+
+		if len(pgpCommitList) > 1 {
+			return nil, fmt.Errorf("only one PGP key is supported for each signing type, got %d SignCommits", len(pgpCommitList))
+		}
+
+		if len(pgpTagList) > 1 {
+			return nil, fmt.Errorf("only one PGP key is supported for each signing type, got %d SignTags", len(pgpTagList))
+		}
+
+		if len(pgpCountersignTagList) > 1 {
+			return nil, fmt.Errorf("only one PGP key is supported for each signing type, got %d CountersignTagList", len(pgpCountersignTagList))
+		}
+
+		if len(pgpCountersignCommitList) > 1 {
+			return nil, fmt.Errorf("only one PGP key is supported for each signing type, got %d CountersignCommitList", len(pgpCountersignCommitList))
 		}
 
 		identityEntry := identity{
-			email:         i.Email,
-			forgeUsername: i.ForgeUsername,
-			forgeUserId:   i.ForgeUserId,
-			sshPublicKeys: sshPublicKeys,
-			gpgPublicKeys: i.GPGPublicKeys,
+			email:                          i.Email,
+			forgeUsername:                  i.ForgeUsername,
+			forgeUserId:                    i.ForgeUserId,
+			commitSSHPublicKeys:            sshCommitMap,
+			tagSSHPublicKeys:               sshTagMap,
+			countersignTagSSHPublicKeys:    sshCountersignTagMap,
+			countersignCommitSSHPublicKeys: sshCountersignCommitMap,
+			commitPGPPublicKeys:            pgpCommitList,
+			tagPGPPublicKeys:               pgpTagList,
+			countersignTagPGPPublicKeys:    sshCountersignTagList,
+			countersignCommitPGPPublicKeys: pgpCountersignCommitList,
 		}
 
 		var forgeEmail = ""
-		if repo.TrustedForge != nil && *repo.TrustedForge == gitHubForgeId && i.ForgeUsername != nil && i.ForgeUserId != nil {
+		if repo.TrustedForge != nil && repo.TrustedForge.Email == gitHubEmail && i.ForgeUsername != nil && i.ForgeUserId != nil {
 			forgeEmail = gitHubUserEmail(*i.ForgeUserId, *i.ForgeUsername)
 
 			if allForgeEmails.Contains(forgeEmail) {
@@ -117,7 +243,7 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 		}
 		allEmails.Add(i.Email)
 
-		if maintainerSet.Contains(i.Email) || contributorSet.Contains(i.Email) {
+		if repo.Maintainers.Contains(i.Email) || repo.Contributors.Contains(i.Email) {
 			maintainerOrContributor[i.Email] = identityEntry
 
 			if forgeEmail != "" {
@@ -125,7 +251,7 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 			}
 		}
 
-		if maintainerSet.Contains(i.Email) {
+		if repo.Maintainers.Contains(i.Email) {
 			maintainerEmails[i.Email] = identityEntry
 
 			if forgeEmail != "" {
@@ -133,7 +259,7 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 			}
 		}
 
-		if contributorSet.Contains(i.Email) {
+		if repo.Contributors.Contains(i.Email) {
 			contributorEmails[i.Email] = identityEntry
 
 			if forgeEmail != "" {
@@ -144,14 +270,26 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 
 	var f *forge
 	if repo.TrustedForge != nil {
-		if *repo.TrustedForge == gitHubForgeId {
-			f = &forge{
-				email:        gitHubEmail,
-				gpgPublicKey: gitHubKey,
-			}
-		} else {
-			return nil, fmt.Errorf("unsupported forge: %s", *repo.TrustedForge)
+		f = &forge{
+			email: repo.TrustedForge.Email,
 		}
+
+		if repo.TrustedForge.PGPPublicKey != nil && repo.TrustedForge.PGPPublicKey.SignCommits {
+			f.commitPGPPublicKey = &repo.TrustedForge.PGPPublicKey.Key
+		}
+
+		if repo.TrustedForge.SSHPublicKey != nil && repo.TrustedForge.SSHPublicKey.SignCommits {
+			sshPublicKeys, err := createSSSHPublicKeyMap([]string{repo.TrustedForge.SSHPublicKey.Key}, repo.Rules.SSHKeyFormats)
+			if err != nil {
+				return nil, err
+			}
+
+			f.identity = &identity{
+				email:               repo.TrustedForge.Email,
+				commitSSHPublicKeys: sshPublicKeys,
+			}
+		}
+
 	}
 
 	exemptedTagMap := make(map[string]string)
@@ -159,35 +297,33 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 	for _, exemptTag := range repo.ExemptedTags {
 		_, found := exemptedTagMap[exemptTag.Ref]
 		if found {
-			return nil, fmt.Errorf("duplicate extempted tag %s found in repository %s", exemptTag.Ref, repoUri)
+			return nil, fmt.Errorf("duplicate exempted tag %s found in repository %s", exemptTag.Ref, repoUri)
 		}
 
 		_, found = exemptedTagSHA512Map[exemptTag.Ref]
 		if found {
-			return nil, fmt.Errorf("duplicate extempted SHA-512 tag %s found in repository %s", exemptTag.Ref, repoUri)
+			return nil, fmt.Errorf("duplicate exempted SHA-512 tag %s found in repository %s", exemptTag.Ref, repoUri)
 		}
 
-		if exemptTag.Hash.SHA1 == nil && exemptTag.Hash.SHA512 == nil {
+		if exemptTag.SHA1 == nil && exemptTag.SHA512 == nil {
 			return nil, fmt.Errorf("at least one of hash.sha1 and hash.sha512 must be set for exempted tag %s", exemptTag.Ref)
 		}
 
-		if exemptTag.Hash.SHA1 != nil {
-			if !HexSHA1Regex.MatchString(*exemptTag.Hash.SHA1) {
-				return nil, fmt.Errorf("SHA-1 hash for exempted tag must be 40 character hex, got %s", *exemptTag.Hash.SHA1)
+		if exemptTag.SHA1 != nil {
+			if !HexSHA1Regex.MatchString(*exemptTag.SHA1) {
+				return nil, fmt.Errorf("SHA-1 hash for exempted tag must be 40 character hex, got %s", *exemptTag.SHA1)
 			}
-			exemptedTagMap[exemptTag.Ref] = *exemptTag.Hash.SHA1
+			exemptedTagMap[exemptTag.Ref] = *exemptTag.SHA1
 		}
 
-		if exemptTag.Hash.SHA512 != nil {
-			if !HexSHA512Regex.MatchString(*exemptTag.Hash.SHA512) {
-				return nil, fmt.Errorf("hash.sha512 for exempted tag must be 128 character hex, got %s", *exemptTag.Hash.SHA512)
+		if exemptTag.SHA512 != nil {
+			if !HexSHA512Regex.MatchString(*exemptTag.SHA512) {
+				return nil, fmt.Errorf("hash.sha512 for exempted tag must be 128 character hex, got %s", *exemptTag.SHA512)
 			}
 
-			exemptedTagSHA512Map[exemptTag.Ref] = *exemptTag.Hash.SHA512
+			exemptedTagSHA512Map[exemptTag.Ref] = *exemptTag.SHA512
 		}
 	}
-
-	protectedBranches := hashset.New[string](repo.ProtectedBranches...)
 
 	var afterSHA1 = hashset.New[plumbing.Hash]()
 	var afterSHA512 = hashset.New[[64]byte]()
@@ -236,28 +372,49 @@ func LoadRepoConfig(config *ParsedConfig, repoUri string) (*RepoConfig, error) {
 	}
 
 	return &RepoConfig{
-		afterSHA1:                          afterSHA1,
-		afterSHA512:                        afterSHA512,
-		sha1ToBranch:                       sha1ToBranch,
-		branchToSHA1:                       branchToSHA1,
-		sha512ToBranch:                     sha512ToBranch,
-		afterSHA1ToSHA512:                  afterSHA1ToSHA512,
-		maintainerEmails:                   maintainerEmails,
-		maintainerOrContributorEmails:      maintainerOrContributor,
-		maintainerForgeEmails:              maintainerForgeEmails,
-		maintainerOrContributorForgeEmails: maintainerOrContributorForgeEmails,
-		trustedForge:                       f,
-		allowSSHSignatures:                 repo.Rules.AllowSSHSignatures,
-		requireSSHUserPresent:              repo.Rules.RequireSSHUserPresent,
-		requireSSHUserVerified:             repo.Rules.RequireSSHUserVerified,
-		allowSSHSHA256:                     repo.Rules.AllowSSHSHA256,
-		allowGPGSignatures:                 repo.Rules.AllowGPGSignatures,
-		requireSignedTags:                  repo.Rules.RequireSignedTags,
-		requireMergeCommits:                repo.Rules.RequireMergeCommits,
-		requireCountersigning:              repo.Rules.RequireCountersigning,
-		requireSHA512:                      repo.Rules.RequireSHA512,
-		exemptedTags:                       exemptedTagMap,
-		exemptedTagsSHA512:                 exemptedTagSHA512Map,
-		protectedBranches:                  protectedBranches,
+		afterSHA1:                                  afterSHA1,
+		afterSHA512:                                afterSHA512,
+		sha1ToBranch:                               sha1ToBranch,
+		branchToSHA1:                               branchToSHA1,
+		sha512ToBranch:                             sha512ToBranch,
+		afterSHA1ToSHA512:                          afterSHA1ToSHA512,
+		maintainerEmails:                           maintainerEmails,
+		maintainerOrContributorEmails:              maintainerOrContributor,
+		maintainerForgeEmails:                      maintainerForgeEmails,
+		maintainerOrContributorForgeEmails:         maintainerOrContributorForgeEmails,
+		trustedForge:                               f,
+		allowSSHSignatures:                         repo.Rules.AllowSSHSignatures,
+		requireSSHUserPresent:                      repo.Rules.RequireSSHUserPresent,
+		requireSSHUserVerified:                     repo.Rules.RequireSSHUserVerified,
+		allowSSHSHA256:                             repo.Rules.AllowSSHSHA256,
+		allowPGPSignatures:                         repo.Rules.AllowPGPSignatures,
+		requireSignedTags:                          repo.Rules.RequireSignedTags,
+		requireMergeCommits:                        repo.Rules.RequireMergeCommits,
+		requireCountersigning:                      repo.Rules.RequireCountersigning,
+		requireTagsToBeOnProtectedBranches:         repo.Rules.RequireTagsToBeOnProtectedBranches,
+		requireSHA512:                              repo.Rules.RequireSHA512,
+		requireMatchedVersions:                     repo.Rules.RequireMatchedVersions,
+		exemptedTags:                               exemptedTagMap,
+		exemptedTagsSHA512:                         exemptedTagSHA512Map,
+		protectedBranches:                          repo.ProtectedBranches,
+		verifyAllCommits:                           repo.Rules.VerifyAllCommits,
+		requireDistinctTagIdentities:               repo.Rules.RequireDistinctTagIdentities,
+		requireDistinctCountersignTagIdentities:    repo.Rules.RequireDistinctCountersignTagIdentities,
+		requireDistinctCountersignCommitIdentities: repo.Rules.RequireDistinctCountersignCommitIdentities,
 	}, nil
+}
+
+func createSSSHPublicKeyMap(sshPublicKeys []string, allowedSSHKeyFormats hashset.Set[string]) (map[string]*ssh.PublicKey, error) {
+	keyMap := make(map[string]*ssh.PublicKey)
+	for _, sshPublicKey := range sshPublicKeys {
+		publicKey, rawKey, err := decodeAndParseSSHPublicKey(sshPublicKey, allowedSSHKeyFormats)
+		if err != nil {
+			return nil, err
+		}
+
+		// TODO check for duplicates
+		keyMap[string(rawKey)] = &publicKey
+	}
+
+	return keyMap, nil
 }

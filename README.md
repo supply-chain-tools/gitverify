@@ -50,7 +50,7 @@ When using this, `--commit` is required along with either `--tag` or `--branch`.
  - `--tag` verifies the tag and that is points to `commit`.
  - `--branch` verifies that the `commit` is on the `branch`. If `branch` is a `protectedBranch` then those rules will also be verified.
  - `--verify-at-tip` can be added to verify that the `commit` is at the tip of the `branch`.
- - Use `--verify-on-head=false` to only verify the relevant state without verifying that `HEAD` is pointing to it.
+ - Use `--verify-at-head=false` to only verify the relevant state without verifying that `HEAD` is pointing to it.
 
 This will only verify the relevant subset of data in the repository. I.e. this check can succeed even if there are
 other `commits`, `tags` and `branches` that would not validate.

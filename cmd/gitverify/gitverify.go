@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"crypto/sha1"
 	"crypto/sha512"
 	"encoding/json"
@@ -46,9 +45,9 @@ VERIFY OPTIONS
                 Verify the tag and that it points to --commit.
         --branch
                 Verify branch and ensure that --commit is on the branch.
-        --verify-on-tip
+        --verify-at-tip
                 Verify that --commit is at the tip of --branch.
-        --verify-on-head
+        --verify-at-head
                 verify that HEAD points to the --commit. On by default.
 
 AFTER-CANDIDATES OPTIONS
@@ -79,17 +78,21 @@ Verify repo and make sure a given commit and tag is present, that the tag points
 is on branch 'main' and that the commit is a descendant of 'after'
     $ gitverify --commit 1f46f2053221c040ce5bcba0239bc09214a37658 --tag v0.0.1 --branch main`
 
-var packRegex = regexp.MustCompile("^pack-[a-f0-9]{40}\\.(pack|idx|rev|mtimes)$")
+const (
+	exitCodeOK              = 0
+	exitCodeWorktreeChanges = 1
+	exitCodeErr             = 3
+)
 
 func main() {
 	flag.Usage = func() {
 		fmt.Println(usage)
 	}
 
-	err := checkForUnsupportedEnvironmentVariables()
+	err := gitverify.CheckForUnsupportedEnvironmentVariables()
 	if err != nil {
 		printError(err)
-		os.Exit(1)
+		os.Exit(exitCodeErr)
 	}
 
 	command := "verify"
@@ -105,67 +108,46 @@ func main() {
 		opts, err := parseVerifyOptions(os.Args)
 		if err != nil {
 			printError(fmt.Errorf("failed to parse input: %w", err))
-			os.Exit(1)
+			os.Exit(exitCodeErr)
 		}
 
-		err = verify(opts)
+		outputString, exitCode, err := verify(opts)
 		if err != nil {
 			printError(fmt.Errorf("verification failed: %w", err))
-			os.Exit(1)
+			os.Exit(exitCodeErr)
 		}
+
+		fmt.Print(outputString)
+		os.Exit(exitCode)
 	case "after-candidates":
 		opts, err := parseGenerateOptions(os.Args[2:])
 		if err != nil {
 			printError(fmt.Errorf("failed to parse input: %w", err))
-			os.Exit(1)
+			os.Exit(exitCodeErr)
 		}
 
 		err = afterCandidates(opts)
 		if err != nil {
 			printError(fmt.Errorf("after-candidates failed: %w", err))
-			os.Exit(1)
+			os.Exit(exitCodeErr)
 		}
 	case "exempt-tags":
 		opts, err := parseGenerateOptions(os.Args[2:])
 		if err != nil {
 			printError(fmt.Errorf("failed to parse input: %w", err))
-			os.Exit(1)
+			os.Exit(exitCodeErr)
 		}
 
 		result, err := exemptTags(opts)
 		if err != nil {
 			printError(fmt.Errorf("failed to get exempt tags: %w", err))
-			os.Exit(1)
+			os.Exit(exitCodeErr)
 		}
 		fmt.Println(result)
 	default:
 		printError(fmt.Errorf("unknown command: %s", command))
-		os.Exit(1)
+		os.Exit(exitCodeErr)
 	}
-}
-
-func checkForUnsupportedEnvironmentVariables() error {
-	// https://git-scm.com/docs/git#_environment_variables
-	unsupportedEnvironmentVariables := hashset.New[string](
-		"GIT_DIR",
-		"GIT_CEILING_DIRECTORIES",
-		"GIT_WORK_TREE",
-		"GIT_INDEX_FILE",
-		"GIT_OBJECT_DIRECTORY",
-		"GIT_ALTERNATE_OBJECT_DIRECTORIES",
-		"GIT_NAMESPACE",
-		"GIT_COMMON_DIR",
-	)
-
-	for _, env := range os.Environ() {
-		pair := strings.SplitN(env, "=", 2)
-		key := pair[0]
-		if unsupportedEnvironmentVariables.Contains(key) {
-			return fmt.Errorf("environment variable %s is not supported", key)
-		}
-	}
-
-	return nil
 }
 
 var allowedErrorCharactersRegex = regexp.MustCompile("^[a-zA-Z0-9 -_.@+/:\"']$")
@@ -195,7 +177,7 @@ type VerifyOptions struct {
 
 func parseVerifyOptions(osArgs []string) (*VerifyOptions, error) {
 	flags := flag.NewFlagSet("all", flag.ExitOnError)
-	var help, h, debugMode, verifyOnHEAD, verifyOnTip, localState, version bool
+	var help, h, debugMode, verifyAtHEAD, verifyAtTip, localState, version, insecurePartialVerification bool
 	var configFilePath, repoUri, commit, tag, branch string
 	flags.BoolVar(&help, "help", false, "")
 	flags.BoolVar(&h, "h", false, "")
@@ -209,8 +191,9 @@ func parseVerifyOptions(osArgs []string) (*VerifyOptions, error) {
 	flags.StringVar(&commit, "commit", "", "")
 	flags.StringVar(&tag, "tag", "", "")
 	flags.StringVar(&branch, "branch", "", "")
-	flags.BoolVar(&verifyOnHEAD, "verify-on-head", true, "")
-	flags.BoolVar(&verifyOnTip, "verify-on-tip", false, "")
+	flags.BoolVar(&verifyAtHEAD, "verify-at-head", true, "")
+	flags.BoolVar(&verifyAtTip, "verify-at-tip", false, "")
+	flags.BoolVar(&insecurePartialVerification, "insecure-partial-verification", false, "")
 
 	args := osArgs[1:]
 	if len(osArgs) > 2 && !strings.HasPrefix(osArgs[1], "-") {
@@ -220,7 +203,7 @@ func parseVerifyOptions(osArgs []string) (*VerifyOptions, error) {
 	err := flags.Parse(args)
 	if err != nil || help || h {
 		fmt.Println(usage)
-		os.Exit(0)
+		os.Exit(exitCodeOK)
 	}
 
 	if len(flags.Args()) > 0 {
@@ -231,44 +214,33 @@ func parseVerifyOptions(osArgs []string) (*VerifyOptions, error) {
 		err := printVersion()
 		if err != nil {
 			print("failed to print version: ", err.Error(), "\n")
-			os.Exit(1)
+			os.Exit(exitCodeErr)
 		}
-		os.Exit(0)
+		os.Exit(exitCodeOK)
 	}
 
 	configureLogger(debugMode)
 
-	repoDir, err := getRepoDir()
+	repoDir, err := gitverify.GetRepoDir()
 	if err != nil {
 		return nil, err
 	}
 
-	if tag != "" && commit == "" {
-		return nil, fmt.Errorf("when using --tag, --commit must be specified")
+	if branch != "" && (commit == "" && tag == "") {
+		return nil, fmt.Errorf("when using --branch, --commit or --tag must be specified")
 	}
 
-	if branch != "" && commit == "" {
-		return nil, fmt.Errorf("when using --branch, --commit must be specified")
-	}
-
-	if commit != "" && tag == "" && branch == "" {
-		return nil, fmt.Errorf("when using --commit, --branch or --tag must be specified")
-	}
-
-	if verifyOnTip && commit == "" {
-		return nil, fmt.Errorf("when using --verify-on-tip, --commit must be specified")
-	}
-
-	if verifyOnTip && branch == "" {
-		return nil, fmt.Errorf("when using --verify-on-tip, --branch must be specified")
+	if verifyAtTip && (commit == "" && tag == "") {
+		return nil, fmt.Errorf("when using --verify-at-tip, --commit or --tag must be specified")
 	}
 
 	validateOptions := &gitverify.ValidateOptions{
-		Commit:       commit,
-		Tag:          tag,
-		Branch:       branch,
-		VerifyOnHEAD: verifyOnHEAD,
-		VerifyOnTip:  verifyOnTip,
+		Commit:                      commit,
+		Tag:                         tag,
+		Branch:                      branch,
+		VerifyAtHEAD:                verifyAtHEAD,
+		VerifyAtTip:                 verifyAtTip,
+		InsecurePartialVerification: insecurePartialVerification,
 	}
 
 	if configFilePath != "" || repoUri != "" {
@@ -320,7 +292,7 @@ func parseGenerateOptions(args []string) (*GenerateOptions, error) {
 	err := flags.Parse(args)
 	if err != nil || help || h {
 		fmt.Println(usage)
-		os.Exit(0)
+		os.Exit(exitCodeOK)
 	}
 
 	if len(flags.Args()) > 0 {
@@ -329,7 +301,7 @@ func parseGenerateOptions(args []string) (*GenerateOptions, error) {
 
 	configureLogger(debugMode)
 
-	repoDir, err := getRepoDir()
+	repoDir, err := gitverify.GetRepoDir()
 	if err != nil {
 		return nil, err
 	}
@@ -340,24 +312,6 @@ func parseGenerateOptions(args []string) (*GenerateOptions, error) {
 		configFilePath: configFilePath,
 		repoUri:        repoUri,
 	}, nil
-}
-
-func getRepoDir() (string, error) {
-	basePath, err := os.Getwd()
-	if err != nil {
-		return "", err
-	}
-
-	repoDir, found, err := gitkit.GetRootPathOfLocalGitRepo(basePath)
-	if err != nil {
-		return "", err
-	}
-
-	if !found {
-		return "", fmt.Errorf("no repository found in %s", basePath)
-	}
-
-	return repoDir, nil
 }
 
 func configureLogger(debugMode bool) {
@@ -373,23 +327,21 @@ func configureLogger(debugMode bool) {
 	slog.SetDefault(logger)
 }
 
-func verify(opts *VerifyOptions) error {
+func verify(opts *VerifyOptions) (string, int, error) {
 	repoDir := opts.repoDir
 	validateOptions := opts.validateOptions
 	configFilePath := opts.configFilePath
 	repoUri := opts.repoUri
 	localState := opts.localState
 
-	fmt.Println("validating...")
-
 	repo, err := gitkit.OpenRepoInLocalPath(repoDir)
 	if err != nil {
-		return err
+		return "", exitCodeErr, err
 	}
 
-	err = checkForUnsupportedGitPaths(repoDir)
+	err = gitverify.CheckForUnsupportedGitPaths(repoDir)
 	if err != nil {
-		return err
+		return "", exitCodeErr, err
 	}
 
 	state := gitkit.LoadRepoState(repo)
@@ -401,275 +353,186 @@ func verify(opts *VerifyOptions) error {
 	var repoConfig *gitverify.RepoConfig
 	repoConfig, repoUri, err = loadRepoConfig(repo, configFilePath, repoUri)
 	if err != nil {
-		return err
+		return "", exitCodeErr, err
 	}
 
 	err = gitverify.Verify(repo, state, repoConfig, sha1Hash, sha512Hash, validateOptions)
 	if err != nil {
-		return err
+		return "", exitCodeErr, err
 	}
 
 	if localState {
 		if configFilePath == "" {
 			forge, org, repoName, err := gitverify.InferForgeOrgAndRepo(repo)
 			if err != nil {
-				return err
+				return "", exitCodeErr, err
 			}
 
 			localStatePath, err = gitverify.GetLocalStatePath(forge, org, repoName)
 			if err != nil {
-				return err
+				return "", exitCodeErr, err
 			}
 		}
 
 		err = gitverify.VerifyLocalState(repo, state, repoConfig, repoUri, localStatePath, sha1Hash, sha512Hash)
 		if err != nil {
-			return fmt.Errorf("failed to verify local state: %w", err)
+			return "", exitCodeErr, fmt.Errorf("failed to verify local state: %w", err)
 		}
 
 		err = gitverify.SaveLocalState(repo, state, repoConfig, repoUri, localStatePath, sha1Hash, sha512Hash)
 		if err != nil {
-			return fmt.Errorf("failed to save local state: %w", err)
+			return "", exitCodeErr, fmt.Errorf("failed to save local state: %w", err)
 		}
 	}
 
-	fmt.Println("OK")
-	return nil
+	return buildFinalOutput(repo, repoDir, repoUri, state, repoConfig, validateOptions)
 }
 
-func checkForUnsupportedGitPaths(repoDir string) error {
-	// https://git-scm.com/docs/git-replace
-	replacePath := filepath.Join(repoDir, ".git", "refs", "replace")
-	if _, err := os.Stat(replacePath); err == nil {
-		return fmt.Errorf("git replace is not supported")
-	}
+func buildFinalOutput(repo *git.Repository, repoDir string, repoUri string, state *gitkit.RepoState, repoConfig *gitverify.RepoConfig, validateOpts *gitverify.ValidateOptions) (string, int, error) {
+	sb := strings.Builder{}
 
-	// https://git-scm.com/docs/git-replace#Documentation/git-replace.txt---graftcommitparent
-	graftPath := filepath.Join(repoDir, ".git", "info", "grafts")
-	if _, err := os.Stat(graftPath); err == nil {
-		return fmt.Errorf("git graft is not supported")
-	}
-
-	// https://git-scm.com/docs/git-clone#Documentation/git-clone.txt---shared
-	alternatesPath := filepath.Join(repoDir, ".git", "objects", "info", "alternates")
-	if _, err := os.Stat(alternatesPath); err == nil {
-		return fmt.Errorf("git alternates is not supported")
-	}
-
-	// https://git-scm.com/docs/gitnamespaces
-	namespacesPath := filepath.Join(repoDir, ".git", "refs", "namespaces")
-	if _, err := os.Stat(namespacesPath); err == nil {
-		return fmt.Errorf("git namespaces is not supported")
-	}
-
-	// https://git-scm.com/docs/shallow
-	shallowPath := filepath.Join(repoDir, ".git", "shallow")
-	if _, err := os.Stat(shallowPath); err == nil {
-		return fmt.Errorf("git shallow is not supported")
-	}
-
-	// https://git-scm.com/docs/reftable
-	reftablePath := filepath.Join(repoDir, ".git", "reftable")
-	if _, err := os.Stat(reftablePath); err == nil {
-		return fmt.Errorf("git reftable is not supported")
-	}
-
-	err := checkForRefSymlinks(repoDir)
+	head, err := repo.Head()
 	if err != nil {
-		return err
+		return "", exitCodeErr, err
 	}
 
-	err = checkForUnsupportedPackFiles(repoDir)
-	if err != nil {
-		return err
-	}
+	referenceName := head.Name().String()
 
-	err = checkObjectsDir(repoDir)
-	if err != nil {
-		return err
-	}
+	commit := head.Hash()
+	matchingTagRefs := make([]string, 0)
+	matchingRemoteRefs := make([]string, 0)
+	matchingHeadRefs := make([]string, 0)
+	if commit.String() != "" {
+		refs, err := repo.References()
+		if err != nil {
+			return "", exitCodeErr, err
+		}
 
-	err = checkPackedRefs(repoDir)
-	if err != nil {
-		return err
-	}
+		err = refs.ForEach(func(reference *plumbing.Reference) error {
+			if reference.Type() == plumbing.HashReference {
+				protected, branchName := gitverify.IsProtected(reference, repoConfig)
 
-	return nil
-}
+				suffix := ""
+				if protected {
+					suffix = " [protected]"
+				}
+				if branchName != "" {
+					if reference.Hash() == commit {
+						if strings.HasPrefix(reference.Name().String(), "refs/heads/") {
+							if referenceName != reference.Name().String() {
+								matchingHeadRefs = append(matchingHeadRefs, branchName+suffix)
+							}
+						} else {
+							referenceName := strings.TrimPrefix(reference.Name().String(), "refs/remotes/")
+							matchingRemoteRefs = append(matchingRemoteRefs, referenceName+suffix)
+						}
+					}
+				}
 
-func checkForRefSymlinks(repoDir string) error {
-	refDir := filepath.Join(repoDir, ".git", "refs")
-	err := filepath.Walk(refDir,
-		func(path string, info os.FileInfo, err error) error {
-			if err != nil {
-				return err
-			}
+				if strings.HasPrefix(reference.Name().String(), "refs/tags/") {
+					t, isAnnotatedTag := state.TagMap[reference.Hash()]
 
-			if !(info.Mode().IsDir() || info.Mode().IsRegular()) {
-				return fmt.Errorf("only directories and regular files are supported in refs dir: %s", path)
+					tagName := strings.TrimPrefix(reference.Name().String(), "refs/tags/")
+
+					if isAnnotatedTag {
+						if t.Target.String() == commit.String() {
+							matchingTagRefs = append(matchingTagRefs, "tag: "+tagName)
+						}
+					} else {
+						if reference.Hash() == commit {
+							matchingTagRefs = append(matchingTagRefs, "tag: "+tagName)
+						}
+					}
+				}
 			}
 
 			return nil
 		})
+		if err != nil {
+			return "", exitCodeErr, err
+		}
+	}
+
+	dir, err := os.Getwd()
 	if err != nil {
-		return err
+		return "", exitCodeErr, err
 	}
-
-	return nil
-}
-
-func checkForUnsupportedPackFiles(repoDir string) error {
-	packDir := filepath.Join(repoDir, ".git", "objects", "pack")
-
-	entries, err := os.ReadDir(packDir)
+	rel, err := filepath.Rel(dir, repoDir)
 	if err != nil {
-		return err
+		return "", exitCodeErr, err
 	}
 
-	for _, entry := range entries {
-		if !entry.Type().IsRegular() {
-			return fmt.Errorf("unsupported non-regular file in %s", packDir)
-		}
+	sb.WriteString(fmt.Sprintf("repository root: %s\n", rel))
+	sb.WriteString(fmt.Sprintf("URI: %s\n", repoUri))
 
-		name := entry.Name()
-		if name == "multi-pack-index" {
-			// https://git-scm.com/docs/multi-pack-index
-			return fmt.Errorf("git multi-pack-index is not supported")
-		}
-
-		if strings.HasSuffix(name, ".bitmap") {
-			// https://git-scm.com/docs/bitmap-format
-			return fmt.Errorf("git bitmap is not supported")
-		}
-
-		if !packRegex.Match([]byte(name)) {
-			return fmt.Errorf("unsupported name of file %s in %s", entry.Name(), packDir)
-		}
-	}
-
-	return nil
-}
-
-func checkObjectsDir(repoDir string) error {
-	objectsDir := filepath.Join(repoDir, ".git", "objects")
-
-	entries, err := os.ReadDir(objectsDir)
+	worktree, err := repo.Worktree()
 	if err != nil {
-		return err
+		return "", exitCodeErr, err
 	}
 
-	for _, entry := range entries {
-		name := entry.Name()
-
-		if len(name) == 2 {
-			if !entry.Type().IsDir() {
-				return fmt.Errorf("%s in %s expected to be a directory", name, objectsDir)
-			}
-
-			if !gitverify.Hex2Regex.MatchString(name) {
-				return fmt.Errorf("%s in %s expected to be hex", name, objectsDir)
-			}
-
-			objects, err := os.ReadDir(filepath.Join(objectsDir, name))
-			if err != nil {
-				return err
-			}
-
-			for _, object := range objects {
-				if !object.Type().IsRegular() {
-					return fmt.Errorf("object %s in %s expected to be a regular file", object.Name(), filepath.Join(objectsDir, name))
-				}
-
-				objectHash := name + object.Name()
-				if !gitverify.HexSHA1Regex.MatchString(objectHash) {
-					return fmt.Errorf("object %s in %s expected to be a SHA-1 hash", objectHash, objectsDir)
-				}
-			}
-		}
-	}
-
-	return nil
-}
-
-func checkPackedRefs(repoDir string) error {
-	// https://git-scm.com/docs/git-pack-refs
-	packedRefsPath := filepath.Join(repoDir, ".git", "packed-refs")
-
-	file, err := os.Open(packedRefsPath)
+	status, err := worktree.Status()
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-
-		return err
+		return "", exitCodeErr, err
 	}
 
-	scanner := bufio.NewScanner(file)
-	lineNumber := 0
-
-	refsSet := hashset.New[string]()
-	for scanner.Scan() {
-		lineNumber++
-
-		line := scanner.Text()
-		if lineNumber == 1 {
-			if strings.HasPrefix(line, "#") {
-				continue
-			} else {
-				return fmt.Errorf("unexpected first line of %s", packedRefsPath)
-			}
+	if validateOpts != nil && (validateOpts.Commit != "" || validateOpts.Tag != "" || validateOpts.Branch != "") {
+		prefix := ""
+		if validateOpts.InsecurePartialVerification {
+			prefix = "[insecure] "
 		}
 
-		if strings.HasPrefix(line, "^") {
-			if !gitverify.HexSHA1Regex.MatchString(line[1:]) {
-				return fmt.Errorf("unexpected peeled hash on line %d in %s", lineNumber, packedRefsPath)
+		if validateOpts.VerifyAtHEAD {
+			m := prefix + "partial verification OK"
+			if status.IsClean() {
+				sb.WriteString(fmt.Sprintf("working tree clean\n%s\n", m))
+				return sb.String(), exitCodeOK, nil
 			}
 
-			continue
+			sb.WriteString(fmt.Sprintf("there are worktree changes\notherwise %s\n", m))
+			return sb.String(), exitCodeWorktreeChanges, nil
 		}
 
-		parts := strings.SplitN(line, " ", 2)
-		if len(parts) != 2 {
-			return fmt.Errorf("unexpected line %d in %s", lineNumber, packedRefsPath)
-		}
-
-		hash := parts[0]
-
-		if !gitverify.HexSHA1Regex.MatchString(hash) {
-			return fmt.Errorf("expected line %d in %s to start with a SHA-1 hash", lineNumber, packedRefsPath)
-		}
-
-		ref := parts[1]
-		if !strings.HasPrefix(ref, "refs/") {
-			return fmt.Errorf("expected line %d in %s to end with a ref", lineNumber, packedRefsPath)
-		}
-
-		if strings.HasPrefix(ref, "refs/replace/") {
-			return fmt.Errorf("git replace is not supported in %s", packedRefsPath)
-		}
-
-		if strings.HasPrefix(ref, "refs/namespaces/") {
-			return fmt.Errorf("git namespaces is not supported in %s", packedRefsPath)
-		}
-
-		if refsSet.Contains(ref) {
-			return fmt.Errorf("duplicate ref at line %d in %s", lineNumber, packedRefsPath)
-		}
-
-		refsSet.Add(ref)
+		m := prefix + "partial detached verification OK"
+		sb.WriteString(fmt.Sprintf("%s\n", m))
+		return sb.String(), exitCodeWorktreeChanges, nil
 	}
 
-	err = scanner.Err()
-	closeErr := file.Close()
-	if err != nil && closeErr != nil {
-		return fmt.Errorf("%w %w", err, closeErr)
-	} else if err != nil {
-		return err
-	} else if closeErr != nil {
-		return closeErr
+	matchingRefs := append(matchingHeadRefs, matchingTagRefs...)
+	matchingRefs = append(matchingRefs, matchingRemoteRefs...)
+	if strings.HasPrefix(referenceName, "refs/heads/") {
+		ref := plumbing.NewReferenceFromStrings(referenceName, head.Hash().String())
+		matchingRefs = append(matchingRefs, "commit: "+commit.String())
+
+		protected, branchName := gitverify.IsProtected(ref, repoConfig)
+		suffix := ""
+		if protected {
+			suffix = " [protected]"
+		}
+
+		if len(matchingRefs) > 0 {
+			suffix += fmt.Sprintf(" (%s)", strings.Join(matchingRefs, ", "))
+		}
+
+		sb.WriteString(fmt.Sprintf("on branch %s%s\n", branchName, suffix))
+	} else if head.Type() == plumbing.HashReference {
+		suffix := ""
+		if len(matchingRefs) > 0 {
+			suffix += fmt.Sprintf(" (%s)", strings.Join(matchingRefs, ","))
+		}
+
+		sb.WriteString(fmt.Sprintf("on commit %s%s\n", head.Hash().String(), suffix))
+	} else {
+		return "", exitCodeErr, fmt.Errorf("HEAD broken")
 	}
 
-	return nil
+	m := "OK"
+	if status.IsClean() {
+		sb.WriteString(fmt.Sprintf("working tree clean\n%s\n", m))
+		return sb.String(), exitCodeOK, nil
+	}
+
+	sb.WriteString(fmt.Sprintf("there are worktree changes\notherwise %s\n", m))
+	return sb.String(), exitCodeWorktreeChanges, nil
 }
 
 func loadRepoConfig(repo *git.Repository, configFilePath string, inputRepoUri string) (config *gitverify.RepoConfig, repoUri string, err error) {
@@ -710,7 +573,7 @@ func afterCandidates(opts *GenerateOptions) error {
 		return fmt.Errorf("failed to open repo: %w", err)
 	}
 
-	err = checkForUnsupportedGitPaths(repoDir)
+	err = gitverify.CheckForUnsupportedGitPaths(repoDir)
 	if err != nil {
 		return err
 	}
@@ -802,7 +665,7 @@ func exemptTags(opts *GenerateOptions) (string, error) {
 		return "", err
 	}
 
-	err = checkForUnsupportedGitPaths(repoDir)
+	err = gitverify.CheckForUnsupportedGitPaths(repoDir)
 	if err != nil {
 		return "", err
 	}

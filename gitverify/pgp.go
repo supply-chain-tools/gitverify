@@ -1,0 +1,89 @@
+package gitverify
+
+import (
+	"fmt"
+	"time"
+
+	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/supply-chain-tools/go-sandbox/hashset"
+)
+
+func validateIdentityPGPCommit(commit *object.Commit, pgpPublicKeys []string, config *RepoConfig) error {
+	if !config.allowPGPSignatures {
+		return fmt.Errorf("PGP signatures not allowed: %s", commit.Hash.String())
+	}
+
+	if len(pgpPublicKeys) < 1 {
+		return fmt.Errorf("PGP public key not found for commit %s", commit.Hash.String())
+	}
+
+	if len(pgpPublicKeys) > 1 {
+		return fmt.Errorf("only one PGP key is currently supported got %d", len(pgpPublicKeys))
+	}
+
+	return validatePGPCommit(commit, pgpPublicKeys[0])
+}
+
+func validatePGPCommit(commit *object.Commit, key string) error {
+	entity, err := commit.Verify(key)
+	if err != nil {
+		return fmt.Errorf("failed to verify commit %s: %w", commit.Hash.String(), err)
+	}
+
+	entityEmails := hashset.New[string]()
+	for _, identity := range entity.Identities {
+		if identity.UserId == nil {
+			return fmt.Errorf("missing user id for commit %s", commit.Hash.String())
+		}
+
+		if !identity.Revoked(time.Now()) {
+			entityEmails.Add(identity.UserId.Email)
+		}
+	}
+
+	if !entityEmails.Contains(commit.Committer.Email) {
+		return fmt.Errorf("PGP key does not match committer email '%s' for commit %s", commit.Committer.Email, commit.Hash.String())
+	}
+
+	return nil
+}
+
+func validateIdentityPGPTag(tag *object.Tag, pgpPublicKeys []string, config *RepoConfig) error {
+	if !config.allowPGPSignatures {
+		return fmt.Errorf("PGP signatures not allowed: %s", tag.Name)
+	}
+
+	if len(pgpPublicKeys) < 1 {
+		return fmt.Errorf("PGP public key not found for tag %s", tag.Name)
+	}
+
+	if len(pgpPublicKeys) > 1 {
+		return fmt.Errorf("only one PGP key is currently supported got %d", len(pgpPublicKeys))
+	}
+
+	return validatePGPTag(tag, pgpPublicKeys[0])
+}
+
+func validatePGPTag(tag *object.Tag, key string) error {
+	entity, err := tag.Verify(key)
+	if err != nil {
+		return fmt.Errorf("failed to verify tag %s: %w", tag.Name, err)
+	}
+
+	entityEmails := hashset.New[string]()
+	for _, identity := range entity.Identities {
+		if identity.UserId == nil {
+			return fmt.Errorf("missing user id for tag %s", tag.Name)
+		}
+
+		if !identity.Revoked(time.Now()) {
+			entityEmails.Add(identity.UserId.Email)
+		}
+	}
+
+	if !entityEmails.Contains(tag.Tagger.Email) {
+		return fmt.Errorf("PGP key does not match tagger email '%s' for tag %s", tag.Tagger.Email, tag.Hash.String())
+	}
+
+	return nil
+}

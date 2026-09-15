@@ -17,60 +17,131 @@ import (
 // TODO improve
 const tagRefRegex = "^refs/tags/.+$"
 
-type Config struct {
-	Type              string     `json:"_type"`
-	Identities        []Identity `json:"identities"`
-	Maintainers       []string   `json:"maintainers"`
-	Contributors      []string   `json:"contributors"`
-	Rules             *Rules     `json:"rules"`
-	ProtectedBranches []string   `json:"protectedBranches"`
+type hashAlgorithm string
 
-	TrustedForge *string `json:"trustedForge"`
+const (
+	hashAlgorithmNone   hashAlgorithm = "none"
+	hashAlgorithmSHA255 hashAlgorithm = "sha256"
+	hashAlgorithmSHA512 hashAlgorithm = "sha512"
+)
+
+type Config struct {
+	Type              string         `json:"_type"`
+	Identities        []Identity     `json:"identities"`
+	ForgeIdentity     *ForgeIdentity `json:"forgeIdentity"`
+	Maintainers       []string       `json:"maintainers"`
+	Contributors      []string       `json:"contributors"`
+	Rules             *Rules         `json:"rules"`
+	ProtectedBranches []string       `json:"protectedBranches"`
 
 	Repositories []Repository `json:"repositories"`
 }
 
 type Identity struct {
 	Email         string   `json:"email"`
-	GPGPublicKeys []string `json:"gpgPublicKeys"`
-	SSHPublicKeys []string `json:"sshPublicKeys"`
+	SSHPublicKeys []SSHKey `json:"sshPublicKeys"`
+	PGPPublicKeys []PGPKey `json:"pgpPublicKeys"`
 	ForgeUsername *string  `json:"forgeUsername"`
 	ForgeUserId   *string  `json:"forgeUserId"`
 }
 
+type SSHKey struct {
+	Key string `json:"key"`
+	KeyOptions
+}
+
+type PGPKey struct {
+	Key string `json:"key"`
+	KeyOptions
+}
+
+type KeyOptions struct {
+	SignCommits            *bool `json:"signCommits"`
+	SignTags               *bool `json:"signTags"`
+	SignCountersignTags    *bool `json:"signCountersignTags"`
+	SignCountersignCommits *bool `json:"signCountersignCommits"`
+}
+
+type ParsedIdentity struct {
+	Email         string
+	SSHPublicKeys []ParsedSSHKey
+	PGPPublicKeys []ParsedPGPKey
+	ForgeUsername *string
+	ForgeUserId   *string
+}
+
+type ParsedSSHKey struct {
+	Key string
+	ParsedKeyOptions
+}
+
+type ParsedPGPKey struct {
+	Key string
+	ParsedKeyOptions
+}
+
+type ParsedKeyOptions struct {
+	SignCommits            bool
+	SignTags               bool
+	SignCountersignTags    bool
+	SignCountersignCommits bool
+}
+
+type Tag struct {
+	PGPPublicKeys []string `json:"pgpPublicKeys"`
+	SSHPublicKeys []string `json:"sshPublicKeys"`
+}
+
+type Countersign struct {
+	PGPPublicKeys []string `json:"pgpPublicKeys"`
+	SSHPublicKeys []string `json:"sshPublicKeys"`
+}
+
+type ForgeIdentity struct {
+	Email         string   `json:"email"`
+	PGPPublicKeys []PGPKey `json:"pgpPublicKeys"`
+	SSHPublicKeys []SSHKey `json:"sshPublicKeys"`
+}
+
 type Rules struct {
-	AllowSSHSignatures     *bool `json:"allowSshSignatures"`
-	RequireSSHUserPresent  *bool `json:"requireSshUserPresent"`
-	RequireSSHUserVerified *bool `json:"requireSshUserVerified"`
-	AllowSSHSHA256         *bool `json:"allowSshSha256"`
+	AllowSSHSignatures     *bool           `json:"allowSshSignatures"`
+	SSHRequireUserPresent  *bool           `json:"sshRequireUserPresent"`
+	SSHRequireUserVerified *bool           `json:"sshRequireUserVerified"`
+	SSHHashAlgorithms      []hashAlgorithm `json:"sshHashAlgorithms"`
+	SSHKeyFormats          []string        `json:"sshKeyFormats"`
 
-	AllowGPGSignatures *bool `json:"allowGpgSignatures"`
+	AllowPGPSignatures *bool `json:"allowPGPSignatures"`
 
-	RequireSignedTags     *bool `json:"requireSignedTags"`
-	RequireMergeCommits   *bool `json:"requireMergeCommits"`
-	RequireCountersigning *bool `json:"requireCountersigning"`
+	RequireSignedTags                  *bool `json:"requireSignedTags"`
+	RequireMergeCommits                *bool `json:"requireMergeCommits"`
+	RequireCountersigning              *bool `json:"requireCountersigning"`
+	RequireTagsToBeOnProtectedBranches *bool `json:"requireTagsToBeOnProtectedBranches"`
 
-	RequireSHA512 *bool `json:"requireSha512"`
+	RequireHash            *string `json:"requireHash"`
+	RequireMatchedVersions *bool   `json:"requireMatchedVersions"`
+	VerifyAllCommits       *bool   `json:"verifyAllCommits"`
+
+	TrustForge *bool `json:"trustForge"`
+
+	RequireDedicatedTagKeys               *bool `json:"requireDedicatedTagKeys"`
+	RequireDedicatedCountersignTagKeys    *bool `json:"requireDedicatedCountersignTagKeys"`
+	RequireDedicatedCountersignCommitKeys *bool `json:"requireDedicatedCountersignCommitKeys"`
+
+	RequireDistinctTagIdentities               *bool `json:"requireDistinctTagIdentities"`
+	RequireDistinctCountersignTagsIdentities   *bool `json:"requireDistinctCountersignTagIdentities"`
+	RequireDistinctCountersignCommitIdentities *bool `json:"requireDistinctCountersignCommitIdentities"`
 }
 
 type Repository struct {
 	Uri   string  `json:"uri"`
 	After []After `json:"after"`
 
-	Identities        []Identity `json:"identities"`
-	Maintainers       []string   `json:"maintainers"`
-	Contributors      []string   `json:"contributors"`
-	Rules             *Rules     `json:"rules"`
-	ProtectedBranches []string   `json:"protectedBranches"`
-
-	TrustedForge *string `json:"trustedForge"`
+	Maintainers       []string `json:"maintainers"`
+	Contributors      []string `json:"contributors"`
+	Rules             *Rules   `json:"rules"`
+	ProtectedBranches []string `json:"protectedBranches"`
 
 	ExemptTags []ExemptTag `json:"exemptTags"`
-}
-
-type Digests struct {
-	SHA1   *string `json:"sha1,omitempty"`
-	SHA512 *string `json:"sha512,omitempty"`
 }
 
 type After struct {
@@ -87,15 +158,21 @@ type ParsedRepository struct {
 	Uri   string
 	After []After
 
-	Identities        []Identity
-	Maintainers       []string
-	Contributors      []string
+	Identities        []ParsedIdentity
+	Maintainers       hashset.Set[string]
+	Contributors      hashset.Set[string]
 	Rules             ParsedRules
-	ProtectedBranches []string
-
-	TrustedForge *string
+	ProtectedBranches hashset.Set[string]
 
 	ExemptedTags []ExemptTag
+
+	TrustedForge *ParsedForge
+}
+
+type ParsedForge struct {
+	Email        string
+	PGPPublicKey *ParsedPGPKey
+	SSHPublicKey *ParsedSSHKey
 }
 
 type ParsedRules struct {
@@ -103,14 +180,31 @@ type ParsedRules struct {
 	RequireSSHUserPresent  bool
 	RequireSSHUserVerified bool
 	AllowSSHSHA256         bool
+	SSHHashAlgorithms      hashset.Set[hashAlgorithm]
+	SSHKeyFormats          hashset.Set[string]
 
-	AllowGPGSignatures bool
+	AllowPGPSignatures bool
 
-	RequireSignedTags     bool
-	RequireMergeCommits   bool
-	RequireCountersigning bool
+	RequireSignedTags                  bool
+	RequireMergeCommits                bool
+	RequireCountersigning              bool
+	RequireTagsToBeOnProtectedBranches bool
 
+	RequireHash   hashAlgorithm
 	RequireSHA512 bool
+
+	RequireMatchedVersions bool
+	VerifyAllCommits       bool
+
+	TrustForge bool
+
+	RequireDedicatedTagKeys               bool
+	RequireDedicatedCountersignTagKeys    bool
+	RequireDedicatedCountersignCommitKeys bool
+
+	RequireDistinctTagIdentities               bool
+	RequireDistinctCountersignTagIdentities    bool
+	RequireDistinctCountersignCommitIdentities bool
 }
 
 func GetConfigPath(forge string, org string) (string, error) {
@@ -171,7 +265,7 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 
 	version := config.Type[len(prefix):]
 
-	expectedVersion := "v0.2"
+	expectedVersion := "v0.3"
 	if version != expectedVersion {
 		return nil, fmt.Errorf("got schema version %s, expected %s", version, expectedVersion)
 	}
@@ -179,16 +273,76 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 	allURIs := hashset.New[string]()
 	parsedRepos := make([]ParsedRepository, 0)
 
+	var forge *ParsedForge = nil
+	if config.ForgeIdentity != nil {
+		numKeys := len(config.ForgeIdentity.PGPPublicKeys) + len(config.ForgeIdentity.SSHPublicKeys)
+		if numKeys != 1 {
+			return nil, fmt.Errorf("expected exactly one forge key, got %d", numKeys)
+		}
+
+		forge = &ParsedForge{
+			// TODO verify email
+			Email: config.ForgeIdentity.Email,
+		}
+
+		defaultForgeKeyOptions := ParsedKeyOptions{
+			SignCommits:            true,
+			SignTags:               false,
+			SignCountersignTags:    false,
+			SignCountersignCommits: false,
+		}
+
+		if len(config.ForgeIdentity.PGPPublicKeys) > 0 {
+			if config.ForgeIdentity.PGPPublicKeys[0].Key == "" {
+				return nil, fmt.Errorf("forge PGP key must be non-empty")
+			}
+			opts := combineKeyOptions(config.ForgeIdentity.PGPPublicKeys[0].KeyOptions, defaultForgeKeyOptions)
+			err := validateForgeKeyOptions(opts)
+			if err != nil {
+				return nil, err
+			}
+
+			forge.PGPPublicKey = &ParsedPGPKey{
+				Key:              config.ForgeIdentity.PGPPublicKeys[0].Key,
+				ParsedKeyOptions: opts,
+			}
+		}
+
+		if len(config.ForgeIdentity.SSHPublicKeys) > 0 {
+			if config.ForgeIdentity.SSHPublicKeys[0].Key == "" {
+				return nil, fmt.Errorf("forge SSH key must be non-empty")
+			}
+			opts := combineKeyOptions(config.ForgeIdentity.SSHPublicKeys[0].KeyOptions, defaultForgeKeyOptions)
+			err := validateForgeKeyOptions(opts)
+			if err != nil {
+				return nil, err
+			}
+
+			forge.SSHPublicKey = &ParsedSSHKey{
+				Key:              config.ForgeIdentity.SSHPublicKeys[0].Key,
+				ParsedKeyOptions: opts,
+			}
+		}
+	} else {
+		if config.Rules.TrustForge != nil && *config.Rules.TrustForge {
+			return nil, fmt.Errorf("trustForge is set globally but no forgeIdentity specified ")
+		}
+	}
+
 	for _, repo := range config.Repositories {
 		uri, err := validateUri(repo.Uri)
 		if err != nil {
 			return nil, err
 		}
 
-		identities, err := combineIdentities(config.Identities, repo.Identities)
-		if err != nil {
-			return nil, err
+		defaultKeyOptions := ParsedKeyOptions{
+			SignCommits:            true,
+			SignTags:               true,
+			SignCountersignTags:    false,
+			SignCountersignCommits: false,
 		}
+
+		identities := parseIdentities(config.Identities, defaultKeyOptions)
 
 		maintainers, err := combineMaintainers(config.Maintainers, repo.Maintainers)
 		if err != nil {
@@ -205,61 +359,51 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 			return nil, err
 		}
 
-		rules, err := combineRules(config.Rules, repo.Rules)
+		defaultSSHHashAlgorithms := hashset.New[hashAlgorithm](hashAlgorithmSHA512)
+
+		defaultRules := ParsedRules{
+			AllowSSHSignatures:                         true,
+			RequireSSHUserPresent:                      false,
+			RequireSSHUserVerified:                     false,
+			SSHHashAlgorithms:                          defaultSSHHashAlgorithms,
+			SSHKeyFormats:                              defaultSSHKeyFormats(),
+			AllowPGPSignatures:                         true,
+			RequireSignedTags:                          true,
+			RequireMergeCommits:                        true,
+			RequireCountersigning:                      false,
+			RequireTagsToBeOnProtectedBranches:         true,
+			RequireHash:                                "none",
+			RequireMatchedVersions:                     false,
+			VerifyAllCommits:                           false,
+			TrustForge:                                 false,
+			RequireDedicatedTagKeys:                    false,
+			RequireDedicatedCountersignTagKeys:         false,
+			RequireDedicatedCountersignCommitKeys:      false,
+			RequireDistinctTagIdentities:               false,
+			RequireDistinctCountersignTagIdentities:    true,
+			RequireDistinctCountersignCommitIdentities: true,
+		}
+
+		parsedRules, err := combineRules(defaultRules, config.Rules, repo.Rules)
 		if err != nil {
 			return nil, err
 		}
 
-		trustedForge := combineTrustedForge(config.TrustedForge, repo.TrustedForge)
-
-		parsedRules := ParsedRules{
-			AllowSSHSignatures:     false,
-			RequireSSHUserPresent:  true,
-			RequireSSHUserVerified: true,
-			AllowSSHSHA256:         false,
-			AllowGPGSignatures:     false,
-			RequireSignedTags:      true,
-			RequireMergeCommits:    true,
-			RequireCountersigning:  false,
-			RequireSHA512:          false,
-		}
-
-		if rules != nil {
-			if rules.AllowSSHSignatures != nil {
-				parsedRules.AllowSSHSignatures = *rules.AllowSSHSignatures
+		var trustedForge *ParsedForge = nil
+		if parsedRules.TrustForge == true {
+			if forge == nil {
+				return nil, fmt.Errorf("trustForge is set, but no forgeIdentity specified")
 			}
 
-			if rules.RequireSSHUserPresent != nil {
-				parsedRules.RequireSSHUserPresent = *rules.RequireSSHUserPresent
+			if forge.PGPPublicKey != nil && parsedRules.AllowPGPSignatures == false {
+				return nil, fmt.Errorf("forgeIdentity.pgpPublicKeys is specified, but allowPGPSignatures is false")
 			}
 
-			if rules.RequireSSHUserVerified != nil {
-				parsedRules.RequireSSHUserVerified = *rules.RequireSSHUserVerified
+			if forge.SSHPublicKey != nil && parsedRules.AllowSSHSignatures == false {
+				return nil, fmt.Errorf("forgeIdentity.sshPublicKeys is specified, but allowSSHSignatures is false")
 			}
 
-			if rules.AllowSSHSHA256 != nil {
-				parsedRules.AllowSSHSHA256 = *rules.AllowSSHSHA256
-			}
-
-			if rules.AllowGPGSignatures != nil {
-				parsedRules.AllowGPGSignatures = *rules.AllowGPGSignatures
-			}
-
-			if rules.RequireSignedTags != nil {
-				parsedRules.RequireSignedTags = *rules.RequireSignedTags
-			}
-
-			if rules.RequireMergeCommits != nil {
-				parsedRules.RequireMergeCommits = *rules.RequireMergeCommits
-			}
-
-			if rules.RequireCountersigning != nil {
-				parsedRules.RequireCountersigning = *rules.RequireCountersigning
-			}
-
-			if rules.RequireSHA512 != nil {
-				parsedRules.RequireSHA512 = *rules.RequireSHA512
-			}
+			trustedForge = forge
 		}
 
 		after, err := validateAfter(repo.After, parsedRules.RequireSHA512)
@@ -277,24 +421,39 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 			return nil, err
 		}
 
+		if protectedBranches.Size() == 0 {
+			return nil, fmt.Errorf("at least one protected branch must be specified")
+		}
+
 		if parsedRules.RequireCountersigning == true && parsedRules.RequireMergeCommits == false {
 			return nil, fmt.Errorf("requireCountersigning can only be used with requireMergeCommits")
 		}
 
-		if parsedRules.RequireCountersigning == true && trustedForge != nil {
-			return nil, fmt.Errorf("trustedForge cannot be used with requireCountersigning")
+		if parsedRules.RequireCountersigning == true && parsedRules.TrustForge {
+			return nil, fmt.Errorf("trustForge cannot be used with requireCountersigning")
 		}
 
-		if parsedRules.RequireSHA512 == true && parsedRules.RequireCountersigning == false {
-			return nil, fmt.Errorf("requireSha512 can only be used with requireCountersigning")
+		if parsedRules.RequireHash != hashAlgorithmNone && parsedRules.RequireCountersigning == false {
+			return nil, fmt.Errorf("requireHash can only be used with requireCountersigning")
 		}
 
-		if parsedRules.RequireSHA512 == true && parsedRules.AllowSSHSHA256 == true {
-			return nil, fmt.Errorf("allowSshSha256 cannot be used with requireSha512")
+		if parsedRules.RequireHash != hashAlgorithmNone && parsedRules.AllowSSHSHA256 == true {
+			return nil, fmt.Errorf("requireHash cannot be used with sshHashAlgorithms 'sha256'")
 		}
 
-		if parsedRules.RequireSHA512 == true && parsedRules.AllowGPGSignatures == true {
-			return nil, fmt.Errorf("requireSha512 does not currently support allowGpgSignatures")
+		if parsedRules.RequireHash != hashAlgorithmNone && parsedRules.AllowPGPSignatures == true {
+			return nil, fmt.Errorf("requireHash does not currently support allowPgpSignatures")
+		}
+
+		if parsedRules.RequireDistinctTagIdentities == true && parsedRules.RequireSignedTags == false {
+			return nil, fmt.Errorf("requireSignedTags must be used with requireDistinctTagIdentities")
+		}
+
+		if !(parsedRules.RequireDistinctCountersignTagIdentities ||
+			parsedRules.RequireDistinctCountersignCommitIdentities ||
+			parsedRules.RequireDedicatedCountersignTagKeys ||
+			parsedRules.RequireDedicatedCountersignCommitKeys) {
+			return nil, fmt.Errorf("when using countersigning, dedicated keys or distinct identities must be set")
 		}
 
 		if allURIs.Contains(uri) {
@@ -310,8 +469,8 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 			Contributors:      contributors,
 			Rules:             parsedRules,
 			ProtectedBranches: protectedBranches,
-			TrustedForge:      trustedForge,
 			ExemptedTags:      exemptTags,
+			TrustedForge:      trustedForge,
 		})
 	}
 
@@ -322,18 +481,85 @@ func parseConfig(config *Config) (*ParsedConfig, error) {
 	return &parsedConfig, nil
 }
 
-func ensurePresent(identities []Identity, maintainers []string, contributors []string) error {
+func validateForgeKeyOptions(options ParsedKeyOptions) error {
+	if options.SignTags != false {
+		return fmt.Errorf("forge key cannot use signTags")
+	}
+
+	if options.SignCountersignTags != false {
+		return fmt.Errorf("forge key cannot use signCountersignTags")
+	}
+
+	if options.SignCountersignCommits != false {
+		return fmt.Errorf("forge key cannot use signCountersignCommits")
+	}
+
+	return nil
+}
+
+func parseIdentities(identities []Identity, defaultKeyOptions ParsedKeyOptions) []ParsedIdentity {
+	result := make([]ParsedIdentity, 0)
+
+	for _, identity := range identities {
+		sshKeys := make([]ParsedSSHKey, 0)
+		for _, sshKey := range identity.SSHPublicKeys {
+			sshKeys = append(sshKeys, ParsedSSHKey{
+				Key:              sshKey.Key,
+				ParsedKeyOptions: combineKeyOptions(sshKey.KeyOptions, defaultKeyOptions),
+			})
+		}
+
+		pgpKeys := make([]ParsedPGPKey, 0)
+		for _, pgpKey := range identity.PGPPublicKeys {
+			pgpKeys = append(pgpKeys, ParsedPGPKey{
+				Key:              pgpKey.Key,
+				ParsedKeyOptions: combineKeyOptions(pgpKey.KeyOptions, defaultKeyOptions),
+			})
+		}
+
+		result = append(result, ParsedIdentity{
+			Email:         identity.Email,
+			SSHPublicKeys: sshKeys,
+			PGPPublicKeys: pgpKeys,
+			ForgeUsername: identity.ForgeUsername,
+			ForgeUserId:   identity.ForgeUserId,
+		})
+	}
+
+	return result
+}
+
+func combineKeyOptions(options KeyOptions, defaults ParsedKeyOptions) ParsedKeyOptions {
+	result := defaults
+
+	if options.SignCommits != nil {
+		result.SignCommits = *options.SignCommits
+	}
+
+	if options.SignTags != nil {
+		result.SignTags = *options.SignTags
+	}
+
+	if options.SignCountersignTags != nil {
+		result.SignCountersignTags = *options.SignCountersignTags
+	}
+
+	if options.SignCountersignCommits != nil {
+		result.SignCountersignCommits = *options.SignCountersignCommits
+	}
+
+	return result
+}
+
+func ensurePresent(identities []ParsedIdentity, maintainers hashset.Set[string], contributors hashset.Set[string]) error {
 	identityEmails := hashset.New[string]()
 
 	for _, identity := range identities {
 		identityEmails.Add(identity.Email)
 	}
 
-	maintainerEmails := hashset.New[string](maintainers...)
-	contributorEmails := hashset.New[string](contributors...)
-
-	maintainerDiff := maintainerEmails.Difference(identityEmails)
-	contributorDiff := contributorEmails.Difference(identityEmails)
+	maintainerDiff := maintainers.Difference(identityEmails)
+	contributorDiff := contributors.Difference(identityEmails)
 
 	if maintainerDiff.Size() > 0 {
 		return fmt.Errorf("maintainers '%s' not present in identities", strings.Join(maintainerDiff.Values(), ","))
@@ -392,7 +618,7 @@ func validateAfter(after []After, requireSHA512 bool) ([]After, error) {
 		}
 
 		if requireSHA512 && a.SHA512 == nil {
-			return nil, fmt.Errorf("after.sha512 is missing, but requireSha512 is set")
+			return nil, fmt.Errorf("after.sha512 is missing, but requireHash is set")
 		}
 
 		if a.SHA512 != nil {
@@ -431,23 +657,23 @@ func validateExemptTags(exemptTags []ExemptTag, requireSHA512 bool) ([]ExemptTag
 			return nil, fmt.Errorf("invalid exemptTag.ref '%s'", exemptTag.Ref)
 		}
 
-		if exemptTag.Hash.SHA1 == nil && exemptTag.Hash.SHA512 == nil {
-			return nil, fmt.Errorf("either exemptTag.hash.sha1 or exemptTag.hash.sha512 must be set, or both")
+		if exemptTag.SHA1 == nil && exemptTag.SHA512 == nil {
+			return nil, fmt.Errorf("either exemptTag.sha1 or exemptTag.sha512 must be set, or both")
 		}
 
-		if exemptTag.Hash.SHA1 != nil {
-			if !HexSHA1Regex.MatchString(*exemptTag.Hash.SHA1) {
-				return nil, fmt.Errorf("exemptTag.hash.sha1 '%s' must be a 40 character hex", *exemptTag.Hash.SHA1)
+		if exemptTag.SHA1 != nil {
+			if !HexSHA1Regex.MatchString(*exemptTag.SHA1) {
+				return nil, fmt.Errorf("exemptTag.sha1 '%s' must be a 40 character hex", *exemptTag.SHA1)
 			}
 		}
 
-		if requireSHA512 && exemptTag.Hash.SHA512 == nil {
-			return nil, fmt.Errorf("exemptTag.hash.sha512 is missing, but requireSha512 is set")
+		if requireSHA512 && exemptTag.SHA512 == nil {
+			return nil, fmt.Errorf("exemptTag.sha512 is missing, but requireHash is set")
 		}
 
-		if exemptTag.Hash.SHA512 != nil {
-			if !HexSHA512Regex.MatchString(*exemptTag.Hash.SHA512) {
-				return nil, fmt.Errorf("exemptTag.hash.sha512 '%s' must be a 128 character hex", *exemptTag.Hash.SHA512)
+		if exemptTag.SHA512 != nil {
+			if !HexSHA512Regex.MatchString(*exemptTag.SHA512) {
+				return nil, fmt.Errorf("exemptTag.sha512 '%s' must be a 128 character hex", *exemptTag.SHA512)
 			}
 		}
 
@@ -460,58 +686,162 @@ func validateExemptTags(exemptTags []ExemptTag, requireSHA512 bool) ([]ExemptTag
 	return exemptTags, nil
 }
 
-func combineIdentities(global []Identity, local []Identity) ([]Identity, error) {
-	if len(local) != 0 {
-		return local, nil
-	} else if len(global) != 0 {
-		return global, nil
-	} else {
-		return nil, fmt.Errorf("no identities specified")
-	}
+func combineMaintainers(global []string, local []string) (hashset.Set[string], error) {
+	result := hashset.New[string](global...)
+	result.Add(local...)
+
+	return result, nil
 }
 
-func combineMaintainers(global []string, local []string) ([]string, error) {
-	if len(local) != 0 {
-		return local, nil
-	} else if len(global) != 0 {
-		return global, nil
-	} else {
-		return nil, fmt.Errorf("no maintainers specified")
-	}
+func combineContributors(global []string, local []string) (hashset.Set[string], error) {
+	result := hashset.New[string](global...)
+	result.Add(local...)
+
+	return result, nil
 }
 
-func combineContributors(global []string, local []string) ([]string, error) {
-	if len(local) != 0 {
-		return local, nil
-	} else {
-		return global, nil
+func combineRules(defaultRules ParsedRules, global *Rules, local *Rules) (ParsedRules, error) {
+	allowedSSHKeyFormats := defaultSSHKeyFormats()
+	allowedSSHHashAlgorithms := hashset.New[hashAlgorithm](hashAlgorithmSHA512, hashAlgorithmSHA255)
+
+	rules, err := overwriteExisting(defaultRules, global, allowedSSHKeyFormats, allowedSSHHashAlgorithms)
+	if err != nil {
+		return defaultRules, err
 	}
+
+	rules, err = overwriteExisting(rules, local, allowedSSHKeyFormats, allowedSSHHashAlgorithms)
+	if err != nil {
+		return defaultRules, err
+	}
+
+	if rules.RequireHash == hashAlgorithmSHA512 {
+		rules.RequireSHA512 = true
+	} else {
+		rules.RequireSHA512 = false
+	}
+
+	if rules.SSHHashAlgorithms.Contains(hashAlgorithmSHA255) {
+		rules.AllowSSHSHA256 = true
+	}
+
+	return rules, nil
 }
 
-func combineRules(global *Rules, local *Rules) (*Rules, error) {
-	if local != nil {
-		return local, nil
-	} else if global != nil {
-		return global, nil
-	} else {
-		return nil, fmt.Errorf("no rules specified")
+func overwriteExisting(existing ParsedRules, rules *Rules, allowedSSHKeyFormats hashset.Set[string], allowedSSHHashAlgorithms hashset.Set[hashAlgorithm]) (ParsedRules, error) {
+	if rules != nil {
+		if rules.AllowSSHSignatures != nil {
+			existing.AllowSSHSignatures = *rules.AllowSSHSignatures
+		}
+
+		if rules.SSHRequireUserPresent != nil {
+			existing.RequireSSHUserPresent = *rules.SSHRequireUserPresent
+		}
+
+		if rules.SSHRequireUserVerified != nil {
+			existing.RequireSSHUserVerified = *rules.SSHRequireUserVerified
+		}
+
+		if rules.SSHKeyFormats != nil {
+			newSet := hashset.New[string]()
+			for _, format := range rules.SSHKeyFormats {
+				if !allowedSSHKeyFormats.Contains(format) {
+					return existing, fmt.Errorf("sshKeyFormats: incorrect format '%s'", format)
+				}
+				newSet.Add(format)
+			}
+
+			existing.SSHKeyFormats = newSet
+		}
+
+		if rules.SSHHashAlgorithms != nil {
+			newSet := hashset.New[hashAlgorithm]()
+			for _, hash := range rules.SSHHashAlgorithms {
+				if !allowedSSHHashAlgorithms.Contains(hash) {
+					return existing, fmt.Errorf("sshHashAlgorithms: incorrect hash '%s'", hash)
+				}
+				newSet.Add(hash)
+			}
+
+			if !newSet.Contains(hashAlgorithmSHA512) {
+				return existing, fmt.Errorf("sshHashAlgorithms: sha512 must be allowed")
+			}
+
+			existing.SSHHashAlgorithms = newSet
+		}
+
+		if rules.AllowPGPSignatures != nil {
+			existing.AllowPGPSignatures = *rules.AllowPGPSignatures
+		}
+
+		if rules.RequireSignedTags != nil {
+			existing.RequireSignedTags = *rules.RequireSignedTags
+		}
+
+		if rules.RequireMergeCommits != nil {
+			existing.RequireMergeCommits = *rules.RequireMergeCommits
+		}
+
+		if rules.RequireCountersigning != nil {
+			existing.RequireCountersigning = *rules.RequireCountersigning
+		}
+
+		if rules.RequireTagsToBeOnProtectedBranches != nil {
+			existing.RequireTagsToBeOnProtectedBranches = *rules.RequireTagsToBeOnProtectedBranches
+		}
+
+		if rules.RequireHash != nil {
+			if *rules.RequireHash == string(hashAlgorithmNone) {
+				existing.RequireHash = hashAlgorithmNone
+			} else if *rules.RequireHash == string(hashAlgorithmSHA512) {
+				existing.RequireHash = hashAlgorithmSHA512
+			} else {
+				return existing, fmt.Errorf("unknown requireHash '%s'", *rules.RequireHash)
+			}
+		}
+
+		if rules.RequireMatchedVersions != nil {
+			existing.RequireMatchedVersions = *rules.RequireMatchedVersions
+		}
+
+		if rules.VerifyAllCommits != nil {
+			existing.VerifyAllCommits = *rules.VerifyAllCommits
+		}
+
+		if rules.TrustForge != nil {
+			existing.TrustForge = *rules.TrustForge
+		}
+
+		if rules.RequireDedicatedTagKeys != nil {
+			existing.RequireDedicatedTagKeys = *rules.RequireDedicatedTagKeys
+		}
+
+		if rules.RequireDedicatedCountersignTagKeys != nil {
+			existing.RequireDedicatedCountersignTagKeys = *rules.RequireDedicatedCountersignTagKeys
+		}
+
+		if rules.RequireDedicatedCountersignCommitKeys != nil {
+			existing.RequireDedicatedCountersignCommitKeys = *rules.RequireDedicatedCountersignCommitKeys
+		}
+
+		if rules.RequireDistinctTagIdentities != nil {
+			existing.RequireDistinctTagIdentities = *rules.RequireDistinctTagIdentities
+		}
+
+		if rules.RequireDistinctCountersignTagsIdentities != nil {
+			existing.RequireDistinctCountersignTagIdentities = *rules.RequireDistinctCountersignTagsIdentities
+		}
+
+		if rules.RequireDistinctCountersignCommitIdentities != nil {
+			existing.RequireDistinctCountersignCommitIdentities = *rules.RequireDistinctCountersignCommitIdentities
+		}
 	}
+
+	return existing, nil
 }
 
-func combineTrustedForge(global *string, local *string) *string {
-	if local != nil {
-		return local
-	}
+func combineProtectedBranches(global []string, local []string) (hashset.Set[string], error) {
+	result := hashset.New[string](global...)
+	result.Add(local...)
 
-	return global
-}
-
-func combineProtectedBranches(global []string, local []string) ([]string, error) {
-	if len(local) != 0 {
-		return local, nil
-	} else if len(global) != 0 {
-		return global, nil
-	} else {
-		return nil, nil
-	}
+	return result, nil
 }
